@@ -1,0 +1,18 @@
+{
+  "name": "energy-bot",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm db:generate && pnpm --filter @energy-bot/database build && pnpm --filter @energy-bot/services build && pnpm --filter @energy-bot/bot dev",
+    "build": "pnpm --filter @energy-bot/database build && pnpm --filter @energy-bot/services build && pnpm --filter @energy-bot/bot build",
+    "db:generate": "pnpm --filter @energy-bot/database db:generate",
+    "db:migrate": "pnpm --filter @energy-bot/database db:migrate",
+    "db:studio": "pnpm --filter @energy-bot/database db:studio",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  },
+  "packageManager": "pnpm@11.25.0+sha512.5cde925b4f075f725eb71fbae18a42ffe784524789f19b61c731cb8721ec28aaee160e01a8d5af4fedb2a42cdbf300efe23db356b0d4a17b4d63e11f8ab7c956"
+}

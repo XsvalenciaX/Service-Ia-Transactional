@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: energy_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/energy_bot?schema=public
+      BOT_SESSION_NAME: energy-bot
+      AI_PROVIDER_API_KEY: ${AI_PROVIDER_API_KEY:-}
+    volumes:
+      - bot_sessions:/app/apps/bot/energy-bot_sessions
+      - bot_uploads:/app/apps/bot/uploads
+    # Necesario para ver el QR en `docker compose up` / `docker compose logs -f bot`.
+    stdin_open: true
+    tty: true
+
+volumes:
+  db_data:
+  bot_sessions:
+  bot_uploads:

@@ -1,0 +1,92 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  receipts          Receipt[]
+  appliances        Appliance[]
+  savingsPlans      SavingsPlan[]
+  conversationState ConversationState?
+
+  @@map("users")
+}
+
+model Receipt {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  imagePath     String
+  // Datos extraidos del recibo (consumo kWh, valor, periodo, etc).
+  // TODO: lógica de IA - hoy se guarda un mock hasta conectar la extracción real.
+  extractedData Json?
+  createdAt     DateTime @default(now())
+
+  @@map("receipts")
+}
+
+enum ApplianceType {
+  AIRE
+  PLANCHA
+  HORNO_AIRFRYER
+}
+
+model Appliance {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  type             ApplianceType
+  frequencyPerWeek Int?
+  usageNote        String?
+  createdAt        DateTime      @default(now())
+
+  @@map("appliances")
+}
+
+enum PlanStatus {
+  PENDIENTE
+  GENERADO
+}
+
+model SavingsPlan {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  // Contenido del plan generado por IA.
+  // TODO: lógica de IA - hoy se guarda un mock hasta conectar la generación real.
+  content   Json?
+  status    PlanStatus @default(PENDIENTE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("savings_plans")
+}
+
+enum ConversationStep {
+  WELCOME
+  AWAITING_RECEIPT
+  ASKING_AIRE
+  ASKING_PLANCHA
+  ASKING_HORNO
+  COMPLETED
+}
+
+model ConversationState {
+  id          String           @id @default(cuid())
+  userId      String           @unique
+  user        User             @relation(fields: [userId], references: [id])
+  currentStep ConversationStep @default(WELCOME)
+  updatedAt   DateTime         @updatedAt
+
+  @@map("conversation_states")
+}
