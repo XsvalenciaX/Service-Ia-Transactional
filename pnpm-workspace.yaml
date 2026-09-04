@@ -1,14 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
-blockExoticSubdeps: false
 allowBuilds:
   '@ffmpeg-installer/darwin-arm64': true
   '@ffmpeg-installer/linux-arm64': true
   '@ffmpeg-installer/linux-x64': true
   '@prisma/engines': true
-  baileys: true
   esbuild: true
   prisma: true
-  protobufjs: true
   sharp: true
