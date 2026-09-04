@@ -3,9 +3,6 @@ dist
 .env
 *.log
 
-# Baileys auth session (folder name = BOT_SESSION_NAME + "_sessions") and QR image
-apps/bot/*_sessions
-apps/bot/*.qr.png
 apps/bot/uploads
 
 # Prisma

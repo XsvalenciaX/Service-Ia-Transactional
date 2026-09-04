@@ -15,24 +15,12 @@ const main = async () => {
   // provider.saveFile() escribe acá pero no crea la carpeta si falta.
   fs.mkdirSync(path.resolve(import.meta.dirname, "../uploads"), { recursive: true });
 
-  const qrcodeTerminal = (await import("qrcode-terminal")).default;
   const { createBot, createFlow, MemoryDB } = await import("@builderbot/bot");
-  const { createBaileysProvider } = await import("./provider/baileys.provider.js");
+  const { provider } = await import("./provider/twilio.provider.js");
   const { welcomeFlow } = await import("./flows/welcome.flow.js");
   const { receiptFlow } = await import("./flows/receipt.flow.js");
   const { applianceFlows } = await import("./flows/appliances.flow.js");
   const { planFlow } = await import("./flows/plan.flow.js");
-
-  const provider = await createBaileysProvider();
-
-  // BaileysProvider no imprime el QR por su cuenta: emite un evento
-  // `require_action` con el QR crudo en `payload.qr` y espera que la app lo
-  // muestre. Lo renderizamos como ASCII en la consola.
-  provider.on("require_action", ({ payload }: { payload?: { qr?: string } }) => {
-    if (payload?.qr) {
-      qrcodeTerminal.generate(payload.qr, { small: true });
-    }
-  });
 
   const bot = await createBot({
     flow: createFlow([welcomeFlow, receiptFlow, ...applianceFlows, planFlow]),
@@ -42,12 +30,14 @@ const main = async () => {
     database: new MemoryDB(),
   });
 
-  // httpServer es lo que efectivamente arranca el provider (initVendor):
-  // sin esto, Baileys nunca intenta conectar y el QR jamás se emite.
+  // httpServer es lo que efectivamente arranca el provider (initVendor) y
+  // registra el webhook de Twilio (POST /webhook) en este mismo puerto.
   const port = Number(process.env.PORT) || 3000;
   bot.httpServer(port);
 
-  console.log("🤖 Bot de ahorro energético corriendo. Escanea el QR con WhatsApp.");
+  console.log(
+    `🤖 Bot de ahorro energético corriendo. Webhook de Twilio: POST http://localhost:${port}/webhook`
+  );
 };
 
 main().catch((error) => {
