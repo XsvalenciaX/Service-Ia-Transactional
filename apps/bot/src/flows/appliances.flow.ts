@@ -148,8 +148,8 @@ const aire = buildApplianceStep({
 // Entrado únicamente vía gotoFlow desde receipt.flow.ts, nunca por keyword directa del usuario.
 export const applianceIntroFlow = addKeyword(["_applianceQuestionsFlow_"])
   .addAnswer(
-    "Antes de seguir: esta información sobre tus electrodomésticos la uso solo para " +
-      "estimar tu consumo y es necesaria para armar tu plan de ahorro. 📋"
+    "Antes de seguir, es importante que sepas que toda la información que me proporcionas la uso solo para " +
+      "estimar tu consumo y para armar tu plan de ahorro. 📋"
   )
   .addAction(async (ctx: FlowContext, { gotoFlow }: FlowMethods) => {
     return gotoFlow(aire.gateFlow);

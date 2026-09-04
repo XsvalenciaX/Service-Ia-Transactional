@@ -24,6 +24,10 @@ export async function findLatestByUserId(
   });
 }
 
+export async function countByUserId(userId: string): Promise<number> {
+  return prisma.receipt.count({ where: { userId } });
+}
+
 export async function deleteAllByUserId(userId: string): Promise<number> {
   const { count } = await prisma.receipt.deleteMany({ where: { userId } });
   return count;

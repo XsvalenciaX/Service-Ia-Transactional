@@ -27,7 +27,7 @@ export const planFlow = addKeyword(["_planFlow_"]).addAction(
 
     if (!personalized) {
       await flowDynamic(
-        "⚠️ Ojo: no pude personalizarlo con tus datos en este momento, así que te di las recomendaciones generales. Escribí *reiniciar* para volver a intentarlo."
+        "⚠️ Ten en cuenta que no pude personalizarlo con tus datos en este momento, así que te di las recomendaciones generales. Escribe *reiniciar* para volver a intentarlo."
       );
     }
   }

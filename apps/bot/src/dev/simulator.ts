@@ -50,9 +50,24 @@ const main = async () => {
 
   const push = (phone: string, payload: OutgoingMessage) => {
     const data = `data: ${JSON.stringify(payload)}\n\n`;
+    const vivos: http.ServerResponse[] = [];
+
     for (const res of clients.get(phone) ?? []) {
-      res.write(data);
+      // Una pestaña que se cerró justo antes de este push deja el socket
+      // muerto; escribirle tira y, si eso pasa dentro del handler de
+      // unhandledRejection, se lleva puesto el simulador entero.
+      if (res.writableEnded || res.destroyed) {
+        continue;
+      }
+      try {
+        res.write(data);
+        vivos.push(res);
+      } catch {
+        // Cliente caído: lo sacamos de la lista.
+      }
     }
+
+    clients.set(phone, vivos);
   };
 
   // TestProvider es el provider mock que trae BuilderBot: no habla con
@@ -234,9 +249,16 @@ const main = async () => {
   process.on("unhandledRejection", (reason) => {
     const message = reason instanceof Error ? reason.message : String(reason);
     console.error("Error en un flow:", reason);
-    for (const phone of clients.keys()) {
+    for (const phone of [...clients.keys()]) {
       push(phone, { type: "error", text: message, buttons: [] });
     }
+  });
+
+  // Última red: el simulador es una herramienta de desarrollo y es preferible
+  // que siga en pie con el error a la vista antes que morirse a mitad de una
+  // prueba y dejar el puerto tomado.
+  process.on("uncaughtException", (error) => {
+    console.error("Excepción no capturada (el simulador sigue vivo):", error);
   });
 
   // En Windows dos procesos pueden quedar escuchando el mismo puerto en

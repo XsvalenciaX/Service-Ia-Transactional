@@ -27,24 +27,29 @@ export interface PlanGenerationRequest {
   instructions: string;
 }
 
-const PLAN_SYSTEM = `Sos un asesor de eficiencia energética que le arma a un usuario
-de WhatsApp un plan para bajar un 15% su consumo eléctrico.
+const PLAN_SYSTEM = `Eres un asesor de eficiencia energética colombiano que le arma a
+un usuario de WhatsApp un plan para reducir un 15% su consumo eléctrico.
 
-Trabajás con dos insumos: los datos del recibo de luz del usuario y las respuestas
+Trabajas con dos insumos: los datos del recibo de luz del usuario y las respuestas
 que dio sobre cómo usa sus electrodomésticos. Reglas:
-- Basá cada recomendación en esos datos concretos: mencioná el electrodoméstico y
-  la frecuencia que el usuario declaró, y cuando tengas el consumo o el monto del
-  recibo, usalos para dimensionar el ahorro.
+- Basa cada recomendación en esos datos concretos: menciona el electrodoméstico y la
+  frecuencia que el usuario declaró, y cuando tengas el consumo o el monto del
+  recibo, úsalos para dimensionar el ahorro.
+- Si tienes el consumo promedio de los últimos meses (averageConsumptionKwh), úsalo
+  como referencia: calcula el 15% sobre ese promedio y comenta si el mes facturado
+  estuvo por encima o por debajo de lo habitual. Si no lo tienes, trabaja con el
+  consumo del período y no lo menciones.
 - Si el usuario dijo que no tiene un electrodoméstico, no lo recomiendes.
 - Entre 3 y 5 recomendaciones, cada una accionable y en una o dos frases.
-- Escribí en español rioplatense, tuteando, sin tecnicismos ni markdown.
-- Respondé únicamente con el JSON pedido.`;
+- Escribe en español colombiano neutro, tratando al usuario de "tú", sin tecnicismos
+  ni markdown. Nada de insultos ni de modismos de otros países.
+- Responde únicamente con el JSON pedido.`;
 
 const APPLIANCE_QUESTIONS: Record<ApplianceType, string> = {
-  [ApplianceType.AIRE]: "¿Tenés aire acondicionado? ¿Cuántas veces por semana y cuántas horas lo usás?",
-  [ApplianceType.PLANCHA]: "¿Tenés plancha? ¿Cuántas veces por semana la usás?",
+  [ApplianceType.AIRE]: "¿Tienes aire acondicionado? ¿Cuántas veces por semana y cuántas horas lo usas?",
+  [ApplianceType.PLANCHA]: "¿Tienes plancha? ¿Cuántas veces por semana la usas?",
   [ApplianceType.HORNO_AIRFRYER]:
-    "¿Tenés horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces por semana lo usás?",
+    "¿Tienes horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces por semana lo usas?",
 };
 
 function buildApplianceQaText(appliances: Appliance[]): string {
@@ -95,9 +100,9 @@ async function buildPlanGenerationRequest(
 
   const context = `${buildReceiptText(receipt)}\n\nHábitos de electrodomésticos:\n${buildApplianceQaText(appliances)}`;
   const instructions =
-    "Con esta información, generá un plan de ahorro energético del 15% en JSON con esta forma: " +
+    "Con esta información, genera un plan de ahorro energético del 15% en JSON con esta forma: " +
     '{ "targetReductionPercent": number, "summary": string, "recommendations": string[] }. ' +
-    'En "summary" resumí en una o dos frases de qué se trata el plan y de dónde sale el ahorro.';
+    'En "summary" resume en una o dos frases de qué se trata el plan y de dónde sale el ahorro.';
 
   return { image, context, instructions };
 }
@@ -112,9 +117,9 @@ const FALLBACK_PLAN: SavingsPlanContent = {
   summary:
     "No pude armar tu plan personalizado en este momento, así que te dejo las recomendaciones generales que más ahorro suelen dar.",
   recommendations: [
-    "Usá el aire acondicionado en 24 °C y apagalo media hora antes de salir.",
-    "Planchá toda la ropa junta en una sola tanda, en vez de prender la plancha varias veces.",
-    "Aprovechá el calor residual del horno: apagalo unos minutos antes de terminar la cocción.",
+    "Usa el aire acondicionado en 24 °C y apágalo media hora antes de salir.",
+    "Plancha toda la ropa junta en una sola tanda, en vez de prender la plancha varias veces.",
+    "Aprovecha el calor residual del horno: apágalo unos minutos antes de terminar la cocción.",
   ],
 };
 
@@ -144,6 +149,44 @@ export interface GeneratedPlan {
   content: SavingsPlanContent;
   /** false cuando la IA no respondió y se guardó el plan genérico. */
   personalized: boolean;
+}
+
+export interface MonthlyPlanStatus {
+  /** true si este usuario ya tiene su plan personalizado del mes en curso. */
+  alreadyDoneThisMonth: boolean;
+  /** Cuándo se generó ese plan. */
+  generatedAt?: Date;
+}
+
+/**
+ * El plan se arma una vez al mes, que es el ritmo al que llega la factura:
+ * rehacerlo a los dos días no aporta nada y gasta llamadas al modelo.
+ *
+ * Se mide por mes calendario sobre `updatedAt` (no `createdAt`): el plan se
+ * guarda con upsert, así que el registro es siempre el mismo y lo que se
+ * mueve al regenerarlo es la fecha de actualización.
+ *
+ * Un plan PENDIENTE no cuenta: ése es el genérico que se guarda cuando la IA
+ * no estaba disponible, y el usuario tiene derecho a volver a intentarlo.
+ */
+export async function getMonthlyPlanStatus(
+  userId: string
+): Promise<MonthlyPlanStatus> {
+  const plan = await planRepository.findLatestByUserId(userId);
+
+  if (!plan || plan.status !== PlanStatus.GENERADO) {
+    return { alreadyDoneThisMonth: false };
+  }
+
+  const ahora = new Date();
+  const mismoMes =
+    plan.updatedAt.getFullYear() === ahora.getFullYear() &&
+    plan.updatedAt.getMonth() === ahora.getMonth();
+
+  return {
+    alreadyDoneThisMonth: mismoMes,
+    generatedAt: plan.updatedAt,
+  };
 }
 
 export async function generateSavingsPlan(

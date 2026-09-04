@@ -2,9 +2,11 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import {
   assistantService,
   conversationStateService,
+  receiptService,
   ConversationStep,
 } from "@energy-bot/services";
-import { isTextMessage } from "../utils/message-validation.js";
+import { applianceIntroFlow } from "./appliances.flow.js";
+import { extractKwh, isTextMessage } from "../utils/message-validation.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 /**
@@ -18,7 +20,7 @@ import type { FlowContext, FlowMethods } from "../types/flow.js";
  *   Antes acá se cortaba con endFlow() y el bot se quedaba mudo.
  */
 export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
-  async (ctx: FlowContext, { flowDynamic, endFlow }: FlowMethods) => {
+  async (ctx: FlowContext, { flowDynamic, endFlow, gotoFlow }: FlowMethods) => {
     const { user, state } = await conversationStateService.getOrCreateSession(
       ctx.from
     );
@@ -26,7 +28,7 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     if (state.currentStep === ConversationStep.WELCOME) {
 
       await flowDynamic(
-          "¡Hola! 👋 Soy tu asistente de ahorro energético para tu hogar o comercio. Te voy a ayudar a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
+          "¡Hola! 👋 Soy tu asistente de ahorro energético para tu hogar. Te voy a ayudar a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
         );
 
       await flowDynamic(
@@ -43,6 +45,34 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     // Audios, stickers y demás: no hay nada que responder.
     if (!isTextMessage(ctx)) {
       return endFlow();
+    }
+
+    // Mientras esperamos el recibo, un mensaje con un número es el consumo
+    // promedio que le pedimos escribir porque la foto no alcanzó.
+    if (state.currentStep === ConversationStep.AWAITING_RECEIPT) {
+      const kwh = extractKwh(ctx.body);
+
+      if (kwh !== undefined && receiptService.isPlausibleConsumption(kwh)) {
+        await receiptService.registerManualAverageConsumption(user.id, kwh);
+        await flowDynamic(
+          `📄 Anotado: *${kwh} kWh* de consumo promedio.\n\nAhora te haré unas preguntas rápidas sobre tus electrodomésticos.`
+        );
+        await conversationStateService.advanceStep(
+          user.id,
+          ConversationStep.ASKING_AIRE
+        );
+        return gotoFlow(applianceIntroFlow);
+      }
+
+      if (kwh !== undefined) {
+        // Trajo un número, pero no puede ser un consumo mensual: si lo
+        // guardáramos, el plan saldría con cuentas absurdas.
+        await flowDynamic(
+          `Ese valor (*${kwh}*) no parece un consumo promedio mensual: normalmente está entre ${receiptService.MIN_CONSUMPTION_KWH} y ${receiptService.MAX_CONSUMPTION_KWH} kWh.\n\n` +
+            "Revisa tu factura y envíame el número en kWh, o una foto de la factura completa."
+        );
+        return;
+      }
     }
 
     const { reply } = await assistantService.answerQuestion(

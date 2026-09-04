@@ -23,10 +23,36 @@ un paso y así la prueba sale lo más barata posible.
 Manda la foto del recibo (bloque de imagen en base64) + `ANALYSIS_PROMPT`, con
 `ANALYSIS_SYSTEM` como system prompt, y espera de vuelta el
 `ReceiptAnalysisResult` en JSON: `valid`, `recommendation` (si no se pudo leer),
-`consumptionKwh`, `amount`, `currency`, `periodStart`, `periodEnd`.
+`consumptionKwh`, `averageConsumptionKwh`, `amount`, `currency`, `periodStart`,
+`periodEnd`.
 
-El system prompt le prohíbe inventar valores: si un dato no se ve en la foto,
-lo omite en vez de estimarlo.
+El system prompt le prohíbe inventar valores: si un dato no se ve en la foto, lo
+omite en vez de estimarlo. Para `averageConsumptionKwh` la regla es más estricta
+todavía — tiene que estar impreso en la factura (el recuadro de "promedio últimos
+6 meses" o el gráfico del historial), nunca calculado a partir del consumo del
+período.
+
+**Si la foto no es una factura o falta el promedio**, `receipt.flow.ts` responde
+"No logramos identificar el consumo, por favor digita el valor en kWh", suma un
+intento en `ConversationState.receiptAttempts` y deja al usuario en
+`AWAITING_RECEIPT`. Hasta el tercer intento ofrece las dos salidas (otra foto de la
+factura completa o el número a mano); del tercero en adelante pide solamente el
+número, porque hay facturas que no traen el promedio impreso y no tiene sentido
+seguir pidiendo fotos.
+
+El número escrito a mano lo atiende `welcome.flow.ts` (el catch-all): mientras el
+paso sea `AWAITING_RECEIPT`, un mensaje con cifras se interpreta como el consumo
+promedio. Lo parsea `extractKwh()` — entiende "265", "265 kwh", "1.250" — y
+`isPlausibleConsumption()` descarta lo que no puede ser un consumo mensual
+(fuera de 10–20.000 kWh), para no armar el plan sobre el total a pagar. Se guarda
+con `registerManualAverageConsumption()`, que marca el registro con
+`source: "manual"`.
+
+**Tono:** los tres system prompts están escritos en español neutro y piden respuestas
+en español colombiano tratando al usuario de "tú", con prohibición explícita de
+insultos y modismos de otros países. No es cosmético: con los prompts escritos en
+voseo rioplatense, el modelo llegó a contestarle "boludo" a un usuario que mandó la
+foto equivocada.
 
 ## 2. Generar el plan
 
@@ -60,6 +86,11 @@ recibe `{ onTopic, reply }`:
 
 Como el prompt recibe el paso actual, la respuesta cierra encarrilando: si todavía no
 mandó el recibo, se lo vuelve a pedir.
+
+El contexto también lleva **la fecha de hoy y el estado mensual del plan**
+(`planService.getMonthlyPlanStatus`), para que responda bien a "¿me haces otro plan?".
+Sin la fecha el modelo inventa el mes: llegó a contestar "el próximo lo hacemos en
+septiembre" estando en septiembre.
 
 Corre en todos los pasos. En `AWAITING_RECEIPT` y `COMPLETED` entra por el
 catch-all; durante las preguntas de electrodomésticos el `capture` se queda con el

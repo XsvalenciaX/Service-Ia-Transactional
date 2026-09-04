@@ -10,6 +10,26 @@ export function isTextMessage(ctx: FlowContext): boolean {
   return typeof ctx.body === "string" && !ctx.body.startsWith(NON_TEXT_BODY_PREFIX);
 }
 
+/**
+ * Saca el número de kWh de un mensaje escrito a mano: "265", "265 kwh",
+ * "es 1.250 kWh", "promedio 265,5". Devuelve undefined si el mensaje no trae
+ * ningún número (ahí es una consulta, no el dato que pedimos).
+ */
+export function extractKwh(text: string): number | undefined {
+  const match = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?/.exec(text.trim());
+  if (!match) {
+    return undefined;
+  }
+
+  // "1.250" y "1,250" son miles; "265,5" es decimal. Se distinguen por el
+  // largo del grupo que viene después del separador.
+  const entero = match[1].replace(/[.,]/g, "");
+  const decimales = match[2] ?? "";
+  const valor = Number(decimales ? `${entero}.${decimales}` : entero);
+
+  return Number.isFinite(valor) ? valor : undefined;
+}
+
 const QUESTION_STARTERS =
   /^(qué|que|cuál|cual|cuánt|cuant|cómo|por qué|por que|para qué|para que|cuándo|dónde|donde|quién|quien|explicame|explícame|no entiendo|me explicás|me explicas)/;
 

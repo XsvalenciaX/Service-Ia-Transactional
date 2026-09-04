@@ -9,6 +9,7 @@ import {
   type SavingsPlan,
 } from "@energy-bot/database";
 import { AiError, requestJson } from "../shared/ai.js";
+import { getMonthlyPlanStatus, type MonthlyPlanStatus } from "../plan/plan.service.js";
 
 export interface AssistantAnswer {
   /** false cuando la pregunta no tenía nada que ver con energía. */
@@ -24,9 +25,9 @@ const APPLIANCE_LABELS: Record<ApplianceType, string> = {
 };
 
 const STEP_HINTS: Record<ConversationStep, string> = {
-  [ConversationStep.WELCOME]: "Recién arranca la conversación.",
+  [ConversationStep.WELCOME]: "Apenas empieza la conversación.",
   [ConversationStep.AWAITING_RECEIPT]:
-    "Estás esperando que te mande la foto de su recibo de luz: recordáselo al final de tu respuesta.",
+    "Estás esperando la foto de su recibo de luz o el consumo promedio en kWh escrito a mano: recuérdaselo al final de tu respuesta.",
   [ConversationStep.ASKING_AIRE]:
     "Estás en medio de las preguntas sobre electrodomésticos (aire acondicionado).",
   [ConversationStep.ASKING_PLANCHA]:
@@ -37,56 +38,61 @@ const STEP_HINTS: Record<ConversationStep, string> = {
     "Ya le entregaste su plan de ahorro: puede preguntarte lo que quiera sobre él.",
 };
 
-const ASSISTANT_SYSTEM = `Sos el asistente de un bot de WhatsApp que ayuda a bajar un 15%
-el consumo eléctrico del hogar. Te llega un mensaje del usuario que no era la respuesta
-que el bot estaba esperando, y tenés que decidir qué hacer con él.
+const ASSISTANT_SYSTEM = `Eres el asistente de un bot de WhatsApp colombiano que ayuda
+a reducir el consumo eléctrico del hogar o del comercio. Te llega un mensaje del
+usuario que no era la respuesta que el bot estaba esperando, y tienes que decidir qué
+hacer con él.
 
-Contestás SOLO sobre: ahorro y consumo de energía eléctrica, la factura de luz del
+Contestas SOLO sobre: ahorro y consumo de energía eléctrica, la factura de luz del
 usuario, sus electrodomésticos y hábitos de uso, el plan de ahorro que le armaste, y
 cómo funciona este bot.
 
 Entra todo lo que tenga que ver con la luz, aunque no sea sobre los datos puntuales
 del usuario: cuánto cuesta el kWh, cómo se lee una factura, qué son los estratos,
 qué electrodoméstico gasta más, por qué subió la tarifa, cómo se mide el consumo.
-Ante la duda de si una pregunta es del tema, asumí que sí.
+Ante la duda de si una pregunta es del tema, asume que sí.
 Queda afuera lo que no tiene nada que ver: deportes, política, chistes, recetas,
 otros servicios (agua, gas, internet), consultas personales.
 
-Devolvés JSON con esta forma exacta:
+Devuelves JSON con esta forma exacta:
 {
   "onTopic": boolean,  // true si la pregunta entra en los temas de arriba
   "reply": string      // lo que se le manda al usuario por WhatsApp
 }
 
 Si onTopic es true:
-- Respondé usando los datos concretos del usuario que te paso abajo (su consumo, sus
+- Responde usando los datos concretos del usuario que te paso abajo (su consumo, sus
   electrodomésticos, su plan). Si te preguntan algo de energía que no depende de sus
-  datos, respondelo igual con lo que sabés.
+  datos, respóndelo igual con lo que sabes.
 - Sé breve: dos o tres frases, es un chat de WhatsApp.
-- Si no tenés el dato que te piden (todavía no mandó el recibo, por ejemplo), decilo
-  y pedíselo.
+- Si no tienes el dato que te piden (todavía no ha mandado el recibo, por ejemplo),
+  dilo y pídeselo.
 
 Si onTopic es false:
-- Decile con amabilidad y buena onda que de eso no podés ayudarlo, y volvé a
-  encarrilar la conversación hacia lo que sí hacés, proponiéndole algo concreto de
-  sus datos. Nunca respondas la pregunta que te hicieron, ni siquiera en parte.
-- No arranques con muletillas de relleno ("jaja", "uy", "che"): entrá directo, y
-  variá la forma de abrir cada vez.
+- Dile con amabilidad que de eso no puedes ayudarle, y vuelve a encarrilar la
+  conversación hacia lo que sí haces, proponiéndole algo concreto de sus datos.
+  Nunca respondas la pregunta que te hicieron, ni siquiera en parte.
+- No arranques con muletillas de relleno ("jaja", "uy"): entra directo, y varía la
+  forma de abrir cada vez.
 
-Escribí en español rioplatense, tuteando, sin markdown y sin emojis al principio.`;
+Escribe en español colombiano neutro, tratando al usuario de "tú", sin markdown y sin
+emojis al principio. Nunca uses insultos ni apodos, ni siquiera en broma o si el
+usuario te provoca, y evita modismos de otros países (nada de "boludo", "che",
+"vale", "güey").`;
 
 function buildUserContext(
   receipt: Receipt | null,
   appliances: Appliance[],
   plan: SavingsPlan | null,
-  step: ConversationStep
+  step: ConversationStep,
+  monthly: MonthlyPlanStatus
 ): string {
   const partes: string[] = [`Situación: ${STEP_HINTS[step]}`];
 
   partes.push(
     receipt?.extractedData
       ? `Datos de su última factura: ${JSON.stringify(receipt.extractedData)}`
-      : "Todavía no mandó el recibo, así que no sabés su consumo."
+      : "Todavía no ha enviado el recibo, así que no conoces su consumo."
   );
 
   partes.push(
@@ -99,13 +105,40 @@ function buildUserContext(
               } (${a.frequencyPerWeek ?? "?"} veces por semana)`
           )
           .join("\n")}`
-      : "Todavía no contestó las preguntas sobre sus electrodomésticos."
+      : "Todavía no ha contestado las preguntas sobre sus electrodomésticos."
   );
 
   partes.push(
     plan?.content
       ? `Plan que ya le entregaste: ${JSON.stringify(plan.content)}`
       : "Todavía no tiene un plan generado."
+  );
+
+  // Sin esto el modelo inventa el mes: llegó a decir "el próximo plan es en
+  // septiembre" estando en septiembre.
+  const hoy = new Date();
+  const mesSiguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
+  const nombreMes = (fecha: Date) =>
+    fecha.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+
+  partes.push(
+    `Hoy es ${hoy.toLocaleDateString("es-CO", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })}. El mes en curso es ${nombreMes(hoy)} y el siguiente es ${nombreMes(
+      mesSiguiente
+    )}.`
+  );
+
+  partes.push(
+    monthly.alreadyDoneThisMonth
+      ? "El plan se arma una vez al mes y el suyo ya está hecho este mes. Si te pide" +
+          ` uno nuevo, explícale que lo actualizan en ${nombreMes(mesSiguiente)},` +
+          " cuando le llegue la próxima factura, y que ahí te mande la foto." +
+          " No inventes otra fecha."
+      : "Si te pide armar o actualizar su plan, pídele la foto de su factura más" +
+          " reciente: todavía no tiene el plan de este mes."
   );
 
   return partes.join("\n\n");
@@ -121,13 +154,14 @@ export async function answerQuestion(
   question: string,
   step: ConversationStep
 ): Promise<AssistantAnswer> {
-  const [receipt, appliances, plan] = await Promise.all([
+  const [receipt, appliances, plan, monthly] = await Promise.all([
     receiptRepository.findLatestByUserId(userId),
     applianceRepository.findAllByUserId(userId),
     planRepository.findLatestByUserId(userId),
+    getMonthlyPlanStatus(userId),
   ]);
 
-  const context = buildUserContext(receipt, appliances, plan, step);
+  const context = buildUserContext(receipt, appliances, plan, step, monthly);
 
   try {
     return await requestJson<AssistantAnswer>({
@@ -141,7 +175,7 @@ export async function answerQuestion(
       return {
         onTopic: false,
         reply:
-          "Uy, ahora mismo no te puedo responder eso. Probá de nuevo en un ratito.",
+          "En este momento no puedo responderte eso. Intenta de nuevo en un rato.",
       };
     }
     throw error;

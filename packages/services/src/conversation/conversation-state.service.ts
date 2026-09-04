@@ -38,6 +38,16 @@ export async function advanceStep(
 }
 
 /**
+ * Suma un intento fallido de leer el consumo promedio de una foto y devuelve
+ * en cuál va. A partir del tercero, el flow le pide al usuario que escriba el
+ * número a mano en vez de seguir pidiéndole fotos.
+ */
+export async function registerReceiptAttempt(userId: string): Promise<number> {
+  const state = await conversationStateRepository.registerReceiptAttempt(userId);
+  return state.receiptAttempts;
+}
+
+/**
  * Deja al usuario como si nunca hubiera escrito: borra su recibo, sus
  * electrodomésticos y su plan, y lo devuelve al paso de bienvenida. Sin
  * borrar los datos previos el flujo se repetiría sobre ellos y el plan
@@ -49,5 +59,6 @@ export async function resetConversation(
   await planRepository.deleteAllByUserId(userId);
   await applianceRepository.deleteAllByUserId(userId);
   await receiptRepository.deleteAllByUserId(userId);
+  await conversationStateRepository.resetReceiptAttempts(userId);
   return conversationStateRepository.setStep(userId, ConversationStep.WELCOME);
 }

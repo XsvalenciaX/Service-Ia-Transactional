@@ -175,9 +175,19 @@ con el clip 📎.
 1. **Bienvenida**: cualquier mensaje del usuario dispara la presentación del bot y
    la solicitud de la foto del recibo de energía.
 2. **Recibo**: al recibir una imagen, el bot la guarda en `apps/bot/uploads/` y se
-   la manda a la IA. Si no es un recibo legible, le explica al usuario qué hacer y
-   le vuelve a pedir la foto; si lo es, guarda el `Receipt` con el consumo extraído
-   y se lo confirma al usuario.
+   la manda a la IA, que valida si es una factura de energía y extrae el consumo del
+   período y el **consumo promedio** de los últimos meses.
+   - Si no es una factura (una foto cualquiera, un menú, un documento) o no se puede
+     leer el promedio, responde *"No logramos identificar el consumo, por favor digita
+     el valor en kWh"*, explica qué pasó y ofrece las dos salidas: otra foto de la
+     factura completa, o el número escrito a mano.
+   - A partir del **tercer intento** deja de pedir fotos y pide directamente el número.
+   - El usuario puede escribir el consumo en cualquier momento (`265`, `265 kwh`,
+     `1.250`): se guarda como `Receipt` con `source: "manual"` y el flujo sigue. Se
+     rechazan valores fuera del rango razonable (10–20.000 kWh) para no armar el plan
+     con un número que en realidad era el total a pagar.
+   - Los intentos se cuentan en `ConversationState.receiptAttempts` y se reinician con
+     `reiniciar`.
 3. **Electrodomésticos**: el bot pregunta, uno por uno, por aire acondicionado,
    plancha y horno/air fryer. Cada uno arranca con una pregunta Sí/No (con
    botones). Si la respuesta es "No", se salta directo al siguiente
@@ -186,7 +196,13 @@ con el clip 📎.
 4. **Cierre**: con recibo + electrodomésticos guardados, la IA genera el
    `SavingsPlan` a partir del consumo del recibo y de las respuestas del usuario,
    y el bot se lo manda por chat (resumen + recomendaciones numeradas).
-5. **Preguntas fuera de guion**: si el usuario escribe cualquier otra cosa (una
+5. **Una vez al mes**: el proceso completo (recibo → preguntas → plan) se hace una
+   vez por mes calendario, que es el ritmo al que llega la factura. Si el usuario
+   manda otra foto o escribe `reiniciar` con el plan del mes ya hecho, el bot le
+   responde que ya lo tiene y le dice en qué mes vuelve. Cuando el plan es de un
+   mes anterior, la foto nueva arranca sola el siguiente ciclo. Un plan en estado
+   `PENDIENTE` (el genérico de cuando la IA no respondió) no cuenta como hecho.
+6. **Preguntas fuera de guion**: si el usuario escribe cualquier otra cosa (una
    duda sobre su plan, sobre su factura, o algo que no tiene nada que ver), la
    atiende la IA vía `welcomeFlow`, que es el catch-all de BuilderBot. Contesta
    con los datos del propio usuario si la pregunta es de energía; si no lo es,
@@ -194,7 +210,7 @@ con el clip 📎.
    medio de las preguntas de electrodomésticos: ahí el bot responde la duda y vuelve
    a hacer la pregunta del paso, sin perder el lugar ni guardar la pregunta como si
    fuera la respuesta.
-6. **Reinicio**: en cualquier punto, el mensaje `reiniciar` (o `reset` /
+7. **Reinicio**: en cualquier punto, el mensaje `reiniciar` (o `reset` /
    `empezar de nuevo`) borra el recibo, los electrodomésticos y el plan del
    usuario, lo devuelve a `WELCOME` y vuelve a saludar. Como los pasos con
    `capture` se llevan el mensaje antes de que BuilderBot evalúe las keywords,

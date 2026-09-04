@@ -86,6 +86,10 @@ model ConversationState {
   userId      String           @unique
   user        User             @relation(fields: [userId], references: [id])
   currentStep ConversationStep @default(WELCOME)
+  // Fotos que el usuario mandó sin que pudiéramos sacarles el consumo
+  // promedio (no era una factura, o era una foto parcial). A partir del
+  // tercer intento se le pide que lo escriba a mano.
+  receiptAttempts Int          @default(0)
   updatedAt   DateTime         @updatedAt
 
   @@map("conversation_states")

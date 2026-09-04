@@ -17,6 +17,10 @@ export interface ReceiptAnalysisResult {
   // hacer el usuario (ej. "sacá la foto con más luz").
   recommendation?: string;
   consumptionKwh?: number;
+  // Promedio de los últimos meses que imprime la propia factura. Suele estar
+  // en un recuadro aparte o en el gráfico de barras del historial, así que es
+  // el primer dato que se pierde cuando la foto no abarca todo el recibo.
+  averageConsumptionKwh?: number;
   amount?: number;
   currency?: string;
   periodStart?: string;
@@ -27,26 +31,38 @@ export interface ProcessReceiptResult {
   analysis: ReceiptAnalysisResult;
   // Solo se guarda en la base y se devuelve si analysis.valid es true.
   receipt?: Receipt;
+  // Cuántas fotos válidas mandó ya este usuario, contando ésta. Sirve para
+  // no pedirle indefinidamente que repita la foto por un dato que su factura
+  // quizá ni siquiera trae impreso.
+  attempt: number;
 }
 
-const ANALYSIS_SYSTEM = `Sos un lector de recibos de energía eléctrica de Colombia.
-Extraés datos de la foto que manda el usuario por WhatsApp y respondés únicamente
+const ANALYSIS_SYSTEM = `Eres un lector de recibos de energía eléctrica de Colombia.
+Extraes datos de la foto que el usuario manda por WhatsApp y respondes únicamente
 con el JSON pedido, sin texto alrededor.
 
 Reglas:
 - Si la imagen no es un recibo de luz, está borrosa, recortada o no se leen los
-  datos, respondé valid=false y explicá en "recommendation" qué hacer, en una
-  frase corta, en español rioplatense y tuteando al usuario.
-- No inventes valores: si un dato no se ve en la imagen, omitilo en vez de estimarlo.
-- Los montos van como número, sin separadores de miles ni símbolo de moneda.`;
+  datos, responde valid=false y explica en "recommendation" qué hacer, en una
+  frase corta y en español colombiano neutro, tratando al usuario de "tú".
+- Esa frase la lee el usuario tal cual. Nunca uses insultos, apodos ni modismos de
+  otros países ("boludo", "che", "güey"): pudo haberse equivocado de foto sin
+  querer, así que trátalo siempre con respeto.
+- No inventes valores: si un dato no se ve en la imagen, omítelo en vez de estimarlo.
+- Los montos van como número, sin separadores de miles ni símbolo de moneda.
+- "averageConsumptionKwh" es el promedio que la factura ya trae impreso (suele
+  aparecer como "consumo promedio", "promedio últimos 6 meses", o en el gráfico
+  del historial de consumo). Nunca lo calcules tú ni lo deduzcas del consumo del
+  período: si ese número no está impreso en la imagen, omite el campo.`;
 
-const ANALYSIS_PROMPT = `Analizá esta imagen de un recibo de energía eléctrica.
+const ANALYSIS_PROMPT = `Analiza esta imagen de un recibo de energía eléctrica.
 
-Respondé en JSON con esta forma exacta:
+Responde en JSON con esta forma exacta:
 {
   "valid": boolean,          // true si es un recibo de luz legible
   "recommendation": string,  // solo si valid=false: por qué no se pudo leer y qué debería hacer el usuario (ej. foto borrosa, mala luz, no es un recibo)
   "consumptionKwh": number,  // solo si valid=true: consumo en kWh del período
+  "averageConsumptionKwh": number, // solo si está impreso en el recibo: consumo promedio de los últimos meses. Omitir el campo si no aparece
   "amount": number,          // solo si valid=true: monto total facturado
   "currency": string,        // solo si valid=true: moneda del monto (ej. "COP")
   "periodStart": string,     // solo si valid=true: inicio del período facturado, formato YYYY-MM-DD
@@ -83,7 +99,7 @@ async function analyzeReceiptWithModel(
       return {
         valid: false,
         recommendation:
-          "Tuve un problema para procesar la imagen. Probá mandándola de nuevo en un momento.",
+          "Tuve un problema para procesar la imagen. Intenta enviándola de nuevo en un momento.",
       };
     }
     throw error;
@@ -96,6 +112,36 @@ async function analyzeReceiptWithModel(
  * datos extraídos. Si no es válida, no se guarda nada y se devuelve la
  * recomendación para que el flow se la muestre al usuario.
  */
+// Rango defendible para un consumo mensual de hogar chico. Sirve
+// para no guardar como kWh un número que en realidad era otra cosa (el total
+// a pagar, un año, un número de cuenta).
+export const MIN_CONSUMPTION_KWH = 10;
+export const MAX_CONSUMPTION_KWH = 20000;
+
+export function isPlausibleConsumption(kwh: number): boolean {
+  return (
+    Number.isFinite(kwh) &&
+    kwh >= MIN_CONSUMPTION_KWH &&
+    kwh <= MAX_CONSUMPTION_KWH
+  );
+}
+
+/**
+ * Guarda el consumo promedio que el usuario escribió a mano, cuando no hubo
+ * forma de sacarlo de la foto. Queda marcado con `source: "manual"` para
+ * poder distinguirlo después de lo que extrajo la IA.
+ */
+export async function registerManualAverageConsumption(
+  userId: string,
+  averageConsumptionKwh: number
+): Promise<Receipt> {
+  return receiptRepository.create({
+    userId,
+    imagePath: "",
+    extractedData: { averageConsumptionKwh, source: "manual" },
+  });
+}
+
 export async function processReceipt(
   userId: string,
   imagePath: string
@@ -107,7 +153,7 @@ export async function processReceipt(
   const analysis = await analyzeReceiptWithModel(request);
 
   if (!analysis.valid) {
-    return { analysis };
+    return { analysis, attempt: await receiptRepository.countByUserId(userId) };
   }
 
   const receipt = await receiptRepository.create({
@@ -115,6 +161,7 @@ export async function processReceipt(
     imagePath,
     extractedData: {
       consumptionKwh: analysis.consumptionKwh,
+      averageConsumptionKwh: analysis.averageConsumptionKwh,
       amount: analysis.amount,
       currency: analysis.currency,
       periodStart: analysis.periodStart,
@@ -122,5 +169,9 @@ export async function processReceipt(
     },
   });
 
-  return { analysis, receipt };
+  return {
+    analysis,
+    receipt,
+    attempt: await receiptRepository.countByUserId(userId),
+  };
 }
