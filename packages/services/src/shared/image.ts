@@ -1,6 +1,13 @@
 import fs from "node:fs/promises";
 
-export function guessImageMediaType(filePath: string): string {
+// Los tipos que acepta la API de IA para un bloque de imagen.
+export type ImageMediaType =
+  | "image/jpeg"
+  | "image/png"
+  | "image/webp"
+  | "image/gif";
+
+export function guessImageMediaType(filePath: string): ImageMediaType {
   const ext = filePath.toLowerCase().split(".").pop();
   switch (ext) {
     case "png":

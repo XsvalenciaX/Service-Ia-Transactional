@@ -20,10 +20,10 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
 
     const imagePath = await provider.saveFile(ctx, { path: "./uploads" });
 
+    await flowDynamic("Dejame leer el recibo… 👀");
+
     // La IA (ver receipt.service.ts) valida si la imagen es un recibo
-    // legible y, si lo es, extrae el consumo. Hoy la llamada al modelo está
-    // mockeada, pero el flow ya reacciona al resultado como lo hará con la
-    // IA real.
+    // legible y, si lo es, extrae el consumo.
     const { analysis } = await receiptService.processReceipt(user.id, imagePath);
 
     if (!analysis.valid) {
@@ -37,8 +37,19 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
       return;
     }
 
+    // Repetirle lo que leímos le deja corregir de entrada si la IA se
+    // equivocó, en vez de descubrirlo recién en el plan final.
+    const consumo =
+      analysis.consumptionKwh !== undefined
+        ? `Leí un consumo de *${analysis.consumptionKwh} kWh*`
+        : "Pude leer tu recibo";
+    const monto =
+      analysis.amount !== undefined
+        ? ` por *${analysis.amount.toLocaleString("es-CO")} ${analysis.currency ?? ""}*`.trimEnd()
+        : "";
+
     await flowDynamic(
-      "📄 ¡Recibí tu recibo! Ahora te haré unas preguntas rápidas sobre tus electrodomésticos."
+      `📄 ${consumo}${monto}. Ahora te haré unas preguntas rápidas sobre tus electrodomésticos.`
     );
 
     await conversationStateService.advanceStep(

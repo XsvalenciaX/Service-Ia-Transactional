@@ -1,11 +1,13 @@
 import { receiptRepository, type Receipt } from "@energy-bot/database";
-import { guessImageMediaType, readImageAsBase64 } from "../shared/image.js";
+import {
+  guessImageMediaType,
+  readImageAsBase64,
+  type ImageMediaType,
+} from "../shared/image.js";
+import { AiError, requestJson } from "../shared/ai.js";
 
-// Datos ya armados para mandarle al modelo de IA cuando se conecte (ver
-// AI_INTEGRATION.md para el detalle de qué falta implementar y qué no
-// tocar). El proveedor/modelo todavía no está definido a propósito.
 export interface ReceiptAnalysisRequest {
-  image: { mediaType: string; base64: string };
+  image: { mediaType: ImageMediaType; base64: string };
   instructions: string;
 }
 
@@ -27,6 +29,17 @@ export interface ProcessReceiptResult {
   receipt?: Receipt;
 }
 
+const ANALYSIS_SYSTEM = `Sos un lector de recibos de energía eléctrica de Colombia.
+Extraés datos de la foto que manda el usuario por WhatsApp y respondés únicamente
+con el JSON pedido, sin texto alrededor.
+
+Reglas:
+- Si la imagen no es un recibo de luz, está borrosa, recortada o no se leen los
+  datos, respondé valid=false y explicá en "recommendation" qué hacer, en una
+  frase corta, en español rioplatense y tuteando al usuario.
+- No inventes valores: si un dato no se ve en la imagen, omitilo en vez de estimarlo.
+- Los montos van como número, sin separadores de miles ni símbolo de moneda.`;
+
 const ANALYSIS_PROMPT = `Analizá esta imagen de un recibo de energía eléctrica.
 
 Respondé en JSON con esta forma exacta:
@@ -42,7 +55,7 @@ Respondé en JSON con esta forma exacta:
 
 function buildReceiptAnalysisRequest(
   imageBase64: string,
-  mediaType: string
+  mediaType: ImageMediaType
 ): ReceiptAnalysisRequest {
   return {
     image: { mediaType, base64: imageBase64 },
@@ -50,19 +63,31 @@ function buildReceiptAnalysisRequest(
   };
 }
 
-// MOCK - ver AI_INTEGRATION.md. Por ahora siempre responde "válido" con
-// datos fijos para poder probar el flujo de punta a punta.
+/**
+ * Si la llamada al modelo falla (sin API key, rate limit, imagen demasiado
+ * pesada) devolvemos valid=false con una explicación: el flow ya sabe pedir
+ * la foto de nuevo, y es mejor que cortar la conversación con un error.
+ */
 async function analyzeReceiptWithModel(
-  _request: ReceiptAnalysisRequest
+  request: ReceiptAnalysisRequest
 ): Promise<ReceiptAnalysisResult> {
-  return {
-    valid: true,
-    consumptionKwh: 350,
-    amount: 185000,
-    currency: "COP",
-    periodStart: "2026-08-01",
-    periodEnd: "2026-08-31",
-  };
+  try {
+    return await requestJson<ReceiptAnalysisResult>({
+      system: ANALYSIS_SYSTEM,
+      prompt: request.instructions,
+      image: request.image,
+    });
+  } catch (error) {
+    if (error instanceof AiError) {
+      console.error("[receipt] falló la lectura del recibo:", error.message);
+      return {
+        valid: false,
+        recommendation:
+          "Tuve un problema para procesar la imagen. Probá mandándola de nuevo en un momento.",
+      };
+    }
+    throw error;
+  }
 }
 
 /**

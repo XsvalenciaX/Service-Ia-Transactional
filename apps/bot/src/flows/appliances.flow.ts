@@ -1,11 +1,13 @@
 import { addKeyword } from "@builderbot/bot";
 import {
   appliancesService,
+  assistantService,
   conversationStateService,
   ConversationStep,
 } from "@energy-bot/services";
 import { planFlow } from "./plan.flow.js";
-import { isTextMessage } from "../utils/message-validation.js";
+import { isRestartCommand, restartFlow } from "./restart.flow.js";
+import { isTextMessage, looksLikeQuestion } from "../utils/message-validation.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 import type { TFlow } from "@builderbot/bot/dist/types.js";
 
@@ -19,6 +21,26 @@ function extractFrequency(text: string): number | undefined {
 // "Sí", "sí", "claro", "tengo uno"...) se trata como afirmativa.
 function isNegative(text: string): boolean {
   return /^no\b/i.test(text.trim());
+}
+
+/**
+ * El usuario preguntó algo en vez de contestar. Le respondemos con la IA y
+ * volvemos a hacerle la pregunta del paso, sin perder el lugar en el flujo.
+ */
+async function answerAndAskAgain(
+  ctx: FlowContext,
+  fallBack: FlowMethods["fallBack"],
+  question: string
+) {
+  const { user, state } = await conversationStateService.getOrCreateSession(
+    ctx.from
+  );
+  const { reply } = await assistantService.answerQuestion(
+    user.id,
+    ctx.body,
+    state.currentStep
+  );
+  return fallBack(`${reply}\n\n${question}`);
 }
 
 /**
@@ -43,6 +65,16 @@ function buildApplianceStep(options: {
         return fallBack("Necesito que me respondas con un mensaje de *texto*, por favor 🙏");
       }
 
+      // Este capture se lleva el mensaje antes de que BuilderBot evalúe las
+      // keywords, así que el comando de reinicio hay que atenderlo acá.
+      if (isRestartCommand(ctx.body)) {
+        return gotoFlow(restartFlow);
+      }
+
+      if (looksLikeQuestion(ctx.body)) {
+        return answerAndAskAgain(ctx, fallBack, options.frequencyQuestion);
+      }
+
       const { user } = await conversationStateService.getOrCreateSession(ctx.from);
       await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
         frequencyPerWeek: extractFrequency(ctx.body),
@@ -59,6 +91,15 @@ function buildApplianceStep(options: {
     async (ctx: FlowContext, { gotoFlow, fallBack }: FlowMethods) => {
       if (!isTextMessage(ctx)) {
         return fallBack("Necesito que me respondas con un mensaje de *texto*, por favor 🙏");
+      }
+
+      // Ídem que en frequencyFlow: acá también hay capture de por medio.
+      if (isRestartCommand(ctx.body)) {
+        return gotoFlow(restartFlow);
+      }
+
+      if (looksLikeQuestion(ctx.body)) {
+        return answerAndAskAgain(ctx, fallBack, options.yesNoQuestion);
       }
 
       if (isNegative(ctx.body)) {

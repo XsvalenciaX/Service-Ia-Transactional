@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simulador · Bot de ahorro energético</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --app-bg: #d1d7db;
+    --chat-bg: #efeae2;
+    --header-bg: #008069;
+    --header-fg: #ffffff;
+    --bubble-bot: #ffffff;
+    --bubble-me: #d9fdd3;
+    --text: #111b21;
+    --muted: #667781;
+    --composer-bg: #f0f2f5;
+    --input-bg: #ffffff;
+    --border: rgba(0, 0, 0, 0.08);
+    --btn: #008069;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --app-bg: #0c1317;
+      --chat-bg: #0b141a;
+      --header-bg: #202c33;
+      --header-fg: #e9edef;
+      --bubble-bot: #202c33;
+      --bubble-me: #005c4b;
+      --text: #e9edef;
+      --muted: #8696a0;
+      --composer-bg: #202c33;
+      --input-bg: #2a3942;
+      --border: rgba(255, 255, 255, 0.08);
+      --btn: #00a884;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--app-bg);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--text);
+  }
+  #app {
+    position: relative;
+    width: min(480px, 100vw);
+    height: min(860px, 100vh);
+    display: flex;
+    flex-direction: column;
+    background: var(--chat-bg);
+    box-shadow: 0 6px 30px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+  }
+  header {
+    background: var(--header-bg);
+    color: var(--header-fg);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+  }
+  .avatar {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: grid; place-items: center;
+    font-size: 19px;
+  }
+  .who { flex: 1; min-width: 0; }
+  .who b { display: block; font-size: 15px; font-weight: 600; }
+  .who span { font-size: 12px; opacity: 0.75; }
+  .step {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .step:empty { display: none; }
+  header button {
+    background: rgba(255, 255, 255, 0.15);
+    color: inherit;
+    border: 0;
+    border-radius: 14px;
+    padding: 6px 11px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  header button:hover { background: rgba(255, 255, 255, 0.28); }
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .row { display: flex; }
+  .row.me { justify-content: flex-end; }
+  .bubble {
+    max-width: 78%;
+    padding: 7px 10px 6px;
+    border-radius: 8px;
+    background: var(--bubble-bot);
+    font-size: 14.5px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+    margin-top: 4px;
+  }
+  .row.me .bubble { background: var(--bubble-me); }
+  .bubble img { max-width: 100%; border-radius: 5px; display: block; }
+  .time { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; }
+  .buttons { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+  .buttons button {
+    background: var(--bubble-bot);
+    color: var(--btn);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .buttons button:hover { filter: brightness(0.97); }
+  .buttons button:disabled { opacity: 0.5; cursor: default; }
+  .system {
+    align-self: center;
+    background: var(--bubble-bot);
+    color: var(--muted);
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 8px;
+    margin: 8px 0;
+    text-align: center;
+    max-width: 90%;
+  }
+  .typing { display: flex; gap: 3px; padding: 4px 2px; }
+  .typing i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+    animation: blink 1.3s infinite;
+  }
+  .typing i:nth-child(2) { animation-delay: 0.2s; }
+  .typing i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+  footer {
+    flex: none;
+    background: var(--composer-bg);
+    padding: 8px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  footer label, footer button.send {
+    flex: none;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    cursor: pointer;
+    font-size: 18px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+  }
+  footer button.send { background: var(--btn); color: #fff; }
+  #text {
+    flex: 1;
+    resize: none;
+    max-height: 110px;
+    padding: 10px 12px;
+    border-radius: 20px;
+    border: 0;
+    background: var(--input-bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 14.5px;
+    outline: none;
+  }
+  #file { display: none; }
+  #drop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 128, 105, 0.85);
+    color: #fff;
+    display: none;
+    place-items: center;
+    font-size: 18px;
+    pointer-events: none;
+  }
+  #app.dragging #drop { display: grid; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="avatar">⚡</div>
+    <div class="who">
+      <b>Bot de ahorro energético</b>
+      <span id="status">conectando…</span>
+      <span id="step" class="step"></span>
+    </div>
+    <button id="reset" title="Empieza de cero con un número nuevo">Nuevo chat</button>
+  </header>
+  <div id="chat"></div>
+  <footer>
+    <label for="file" title="Adjuntar recibo">📎</label>
+    <input type="file" id="file" accept="image/*" />
+    <textarea id="text" rows="1" placeholder="Escribe un mensaje" autocomplete="off"></textarea>
+    <button class="send" id="send" title="Enviar">➤</button>
+  </footer>
+  <div id="drop">Soltá la foto del recibo</div>
+</div>
+
+<script>
+const chat = document.getElementById("chat");
+const statusEl = document.getElementById("status");
+const stepEl = document.getElementById("step");
+const textEl = document.getElementById("text");
+const fileEl = document.getElementById("file");
+const appEl = document.getElementById("app");
+let phone = null;
+let source = null;
+let typingEl = null;
+let typingTimer = null;
+
+const now = () =>
+  new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+
+const atBottom = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight < 80;
+
+function scroll(force) {
+  if (force || atBottom()) chat.scrollTop = chat.scrollHeight;
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+// Los flows escriben con el markdown de WhatsApp (*negrita*, _cursiva_);
+// crudo en el navegador se ve mal.
+function format(value) {
+  return escapeHtml(value)
+    .replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>")
+    .replace(/_([^_\n]+)_/g, "<em>$1</em>");
+}
+
+function addBubble(who, html, buttons) {
+  const row = document.createElement("div");
+  row.className = "row " + who;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.innerHTML = html;
+
+  if (buttons && buttons.length) {
+    const box = document.createElement("div");
+    box.className = "buttons";
+    buttons.forEach(function (label) {
+      const button = document.createElement("button");
+      button.textContent = label;
+      button.onclick = function () {
+        box.querySelectorAll("button").forEach(function (other) {
+          other.disabled = true;
+        });
+        send(label);
+      };
+      box.appendChild(button);
+    });
+    bubble.appendChild(box);
+  }
+
+  const time = document.createElement("div");
+  time.className = "time";
+  time.textContent = now();
+  bubble.appendChild(time);
+  row.appendChild(bubble);
+  chat.appendChild(row);
+  scroll(who === "me");
+  return row;
+}
+
+function addSystem(text) {
+  const el = document.createElement("div");
+  el.className = "system";
+  el.textContent = text;
+  chat.appendChild(el);
+  scroll(true);
+}
+
+function showTyping() {
+  clearTimeout(typingTimer);
+  if (!typingEl) {
+    typingEl = document.createElement("div");
+    typingEl.className = "row";
+    typingEl.innerHTML =
+      '<div class="bubble"><div class="typing"><i></i><i></i><i></i></div></div>';
+    chat.appendChild(typingEl);
+    scroll(true);
+  }
+  // Si el bot no manda nada más en 4s, damos la respuesta por terminada.
+  typingTimer = setTimeout(hideTyping, 4000);
+}
+
+function hideTyping() {
+  clearTimeout(typingTimer);
+  if (typingEl) {
+    typingEl.remove();
+    typingEl = null;
+  }
+}
+
+async function post(path, body) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(Object.assign({ phone: phone }, body)),
+  });
+  if (!res.ok) {
+    hideTyping();
+    addSystem("⚠️ " + (await res.text()));
+  }
+}
+
+function send(text) {
+  const value = text.trim();
+  if (!value) return;
+  addBubble("me", format(value));
+  showTyping();
+  post("/api/message", { text: value });
+}
+
+async function sendImage(file) {
+  const dataUrl = await new Promise(function (resolve) {
+    const reader = new FileReader();
+    reader.onload = function () {
+      resolve(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+  addBubble("me", '<img src="' + dataUrl + '" alt="recibo" />');
+  showTyping();
+  await post("/api/image", { filename: file.name, dataUrl: dataUrl });
+}
+
+function connect() {
+  if (source) source.close();
+  source = new EventSource("/api/stream?phone=" + encodeURIComponent(phone));
+
+  source.onopen = function () {
+    statusEl.textContent = "en línea · " + phone;
+  };
+  source.onerror = function () {
+    statusEl.textContent = "reconectando…";
+  };
+  source.onmessage = function (event) {
+    const data = JSON.parse(event.data);
+    if (data.type === "message") {
+      hideTyping();
+      addBubble("bot", format(data.text), data.buttons);
+      // Los flows mandan varios mensajes seguidos: dejamos el indicador
+      // puesto un momento por si viene otro.
+      showTyping();
+      refreshState();
+    } else if (data.type === "error") {
+      hideTyping();
+      addSystem("⚠️ " + data.text);
+    }
+  };
+}
+
+// El paso de la conversación vive en Postgres, no en esta página: mostrarlo
+// explica al toque por qué el bot contesta lo que contesta (o por qué calla,
+// si el número quedó en un paso que ningún flow atiende).
+async function refreshState() {
+  if (!phone) return;
+  try {
+    const res = await fetch("/api/state?phone=" + encodeURIComponent(phone));
+    const data = await res.json();
+    stepEl.textContent = data.step;
+  } catch {
+    stepEl.textContent = "";
+  }
+}
+
+async function start() {
+  const res = await fetch("/api/session");
+  const data = await res.json();
+  phone = data.phone;
+  chat.innerHTML = "";
+  addSystem("Chat nuevo con el número " + phone + ". Escribí cualquier cosa para arrancar.");
+  connect();
+  refreshState();
+}
+
+document.getElementById("send").onclick = function () {
+  send(textEl.value);
+  textEl.value = "";
+  textEl.style.height = "auto";
+};
+
+textEl.addEventListener("keydown", function (e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById("send").click();
+  }
+});
+
+textEl.addEventListener("input", function () {
+  textEl.style.height = "auto";
+  textEl.style.height = Math.min(textEl.scrollHeight, 110) + "px";
+});
+
+fileEl.addEventListener("change", function () {
+  if (fileEl.files[0]) sendImage(fileEl.files[0]);
+  fileEl.value = "";
+});
+
+document.getElementById("reset").onclick = function () {
+  start();
+};
+
+appEl.addEventListener("dragover", function (e) {
+  e.preventDefault();
+  appEl.classList.add("dragging");
+});
+appEl.addEventListener("dragleave", function () {
+  appEl.classList.remove("dragging");
+});
+appEl.addEventListener("drop", function (e) {
+  e.preventDefault();
+  appEl.classList.remove("dragging");
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.indexOf("image/") === 0) sendImage(file);
+});
+
+start();
+</script>
+</body>
+</html>

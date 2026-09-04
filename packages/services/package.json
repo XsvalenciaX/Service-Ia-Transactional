@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@energy-bot/database": "workspace:*"
   },
   "devDependencies": {

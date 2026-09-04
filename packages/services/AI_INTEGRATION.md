@@ -1,59 +1,98 @@
-# Integración con IA (pendiente)
+# Integración con IA
 
-El proveedor y el modelo de IA todavía **no están definidos**. Mientras tanto,
-los dos puntos donde se va a conectar están mockeados pero con la forma de
-request/response ya pensada para no tener que tocar el resto del flujo
-cuando se elija el proveedor.
+Proveedor: **Anthropic (Claude)**, vía el SDK oficial `@anthropic-ai/sdk`.
 
-Variable de entorno ya reservada para la API key, cualquiera sea el
-proveedor: `AI_PROVIDER_API_KEY` (ver `.env.example`).
+- API key: `AI_PROVIDER_API_KEY` en el `.env` de la raíz (se acepta también
+  `ANTHROPIC_API_KEY`). Se saca de <https://console.anthropic.com/settings/keys>.
+- Modelo: `AI_MODEL`, por defecto **`claude-haiku-4-5`** — el más barato del
+  catálogo que entiende imágenes (USD 1 por millón de tokens de entrada, 5 de
+  salida), que es lo que hace falta para leer la foto de un recibo. Para más
+  precisión: `claude-sonnet-5` o `claude-opus-5`, sin tocar código.
 
-## 1. Validar y extraer datos del recibo
+El cliente vive en `src/shared/ai.ts` y se crea **la primera vez que se lo usa**,
+no al importar el módulo: el bot importa estos servicios al arrancar y, si no,
+no podría levantar ni mostrar el QR sin la API key configurada.
 
-**Archivo:** `src/receipt/receipt.service.ts`
-**Función a reemplazar:** `analyzeReceiptWithModel(request)`
+Las dos llamadas son de un solo turno, sin thinking ni tool use: son tareas de
+un paso y así la prueba sale lo más barata posible.
 
-- **Recibe** (`ReceiptAnalysisRequest`): la imagen del recibo en base64 +
-  las instrucciones/prompt para el modelo (ya armadas en
-  `buildReceiptAnalysisRequest`, no hace falta tocarlas).
-- **Tiene que devolver** (`ReceiptAnalysisResult`):
-  - `valid: boolean` — si la imagen es un recibo de luz legible.
-  - `recommendation?: string` — si `valid` es `false`, por qué no se pudo
-    leer y qué debería hacer el usuario (foto borrosa, mala luz, no es un
-    recibo, etc). El flow se lo muestra tal cual al usuario.
-  - Si `valid` es `true`: `consumptionKwh`, `amount`, `currency`,
-    `periodStart`, `periodEnd` (fechas en formato `YYYY-MM-DD`).
-- **Qué hacer:** reemplazar el cuerpo de la función por la llamada real al
-  proveedor elegido, mandándole `request.image` y `request.instructions`, y
-  mapear su respuesta a `ReceiptAnalysisResult`. No hace falta tocar
-  `processReceipt` ni el flow (`apps/bot/src/flows/receipt.flow.ts`) — ya
-  reaccionan a `valid`/`recommendation` correctamente.
+## 1. Leer el recibo
 
-## 2. Generar el plan de ahorro
+**Archivo:** `src/receipt/receipt.service.ts` -> `analyzeReceiptWithModel()`
 
-**Archivo:** `src/plan/plan.service.ts`
-**Función a reemplazar:** `generatePlanContent(request)`
+Manda la foto del recibo (bloque de imagen en base64) + `ANALYSIS_PROMPT`, con
+`ANALYSIS_SYSTEM` como system prompt, y espera de vuelta el
+`ReceiptAnalysisResult` en JSON: `valid`, `recommendation` (si no se pudo leer),
+`consumptionKwh`, `amount`, `currency`, `periodStart`, `periodEnd`.
 
-- **Recibe** (`PlanGenerationRequest`): `context` (texto con el consumo del
-  recibo + las preguntas y respuestas de electrodomésticos, ya armado en
-  `buildPlanGenerationRequest`), `instructions` (qué se le pide al modelo),
-  y opcionalmente `image` (la foto original del recibo, en base64, si
-  todavía existe en disco).
-- **Tiene que devolver** (`SavingsPlanContent`): `targetReductionPercent`,
-  `summary`, `recommendations: string[]`.
-- **Qué hacer:** reemplazar el cuerpo de la función por la llamada real,
-  mandándole `context` + `instructions` (+ `image` si el proveedor elegido
-  soporta visión y se quiere aprovechar). No hace falta tocar
-  `generateSavingsPlan` ni `plan.flow.ts`.
+El system prompt le prohíbe inventar valores: si un dato no se ve en la foto,
+lo omite en vez de estimarlo.
 
-## Qué NO hace falta tocar
+## 2. Generar el plan
 
-- La construcción de los requests (`buildReceiptAnalysisRequest`,
-  `buildPlanGenerationRequest`) ya arma el contenido correcto; si el
-  proveedor elegido necesita un formato de mensaje distinto (bloques de
-  imagen/texto, roles, etc.), armarlo a partir de estos campos dentro de la
-  función que llama al modelo, sin cambiar las interfaces que ya consume el
-  resto del código.
-- La validación de que las respuestas del usuario sean texto
-  (`apps/bot/src/utils/message-validation.ts`) no tiene relación con esto,
-  ya está implementada y funcionando.
+**Archivo:** `src/plan/plan.service.ts` -> `generatePlanContent()`
+
+Manda el `context` que arma `buildPlanGenerationRequest()` — los datos extraídos
+del recibo + las preguntas y respuestas sobre electrodomésticos — más la imagen
+original del recibo si sigue en disco, y espera el `SavingsPlanContent` en JSON:
+`targetReductionPercent`, `summary`, `recommendations`.
+
+`PLAN_SYSTEM` obliga a que cada recomendación se apoye en esos datos concretos
+(el electrodoméstico y la frecuencia que el usuario declaró, el consumo del
+recibo) y a no recomendar nada sobre un electrodoméstico que el usuario dijo no
+tener.
+
+## 3. Responder preguntas fuera de guion
+
+**Archivo:** `src/assistant/assistant.service.ts` -> `answerQuestion()`
+
+Lo llama `welcomeFlow` (el catch-all de BuilderBot) cuando el usuario escribe algo
+que no era lo que el bot estaba esperando. Le manda el mensaje más el contexto del
+propio usuario — su recibo, sus electrodomésticos, su plan y en qué paso está — y
+recibe `{ onTopic, reply }`:
+
+- **Del tema** (su plan, su factura, o energía en general: cuánto vale el kWh, qué
+  electrodoméstico gasta más, por qué subió la tarifa): responde con sus datos
+  concretos. Ante la duda, el prompt le dice que asuma que la pregunta es del tema.
+- **Fuera del tema** (deportes, chistes, recetas, otros servicios): no la responde ni
+  en parte, avisa que de eso no puede ayudar y reconduce hacia lo que sí hace,
+  proponiendo algo concreto de los datos del usuario.
+
+Como el prompt recibe el paso actual, la respuesta cierra encarrilando: si todavía no
+mandó el recibo, se lo vuelve a pedir.
+
+Corre en todos los pasos. En `AWAITING_RECEIPT` y `COMPLETED` entra por el
+catch-all; durante las preguntas de electrodomésticos el `capture` se queda con el
+mensaje antes que nadie, así que `appliances.flow.ts` decide con
+`looksLikeQuestion()` (en `apps/bot/src/utils/message-validation.ts`) si eso que
+escribió el usuario era una respuesta o una pregunta, y en el segundo caso responde
+y vuelve a hacer la pregunta del paso con `fallBack`, sin perder el lugar.
+
+Esa decisión es una heurística local (signos de interrogación, palabras
+interrogativas, y la regla de que un mensaje con números es una respuesta) y no una
+llamada al modelo, a propósito: clasificar cada respuesta con la IA duplicaría el
+costo de una conversación, y la enorme mayoría de los mensajes en esos pasos son
+respuestas normales.
+
+## Cuando la IA no está disponible
+
+Todo lo que puede fallar (falta de API key, key inválida, rate limit, imagen
+demasiado pesada, respuesta no parseable) sale como `AiError` desde
+`src/shared/ai.ts`, para poder distinguirlo de un bug. Los tres servicios lo
+capturan y degradan en vez de cortar la conversación:
+
+- **Recibo:** devuelve `valid: false` con una explicación. El flow ya sabe pedir
+  la foto de nuevo y el usuario se queda en `AWAITING_RECEIPT`.
+- **Preguntas fuera de guion:** responde que en ese momento no puede.
+- **Plan:** guarda un plan genérico con estado **`PENDIENTE`** (en vez de
+  `GENERADO`), que es la marca de que hay que regenerarlo. El flow avisa que no
+  se pudo personalizar y sugiere `reiniciar`.
+
+En los dos casos el motivo real queda en la consola del servidor
+(`[receipt] falló...` / `[plan] falló...`).
+
+## Cómo probarlo
+
+Con `AI_PROVIDER_API_KEY` cargada, `pnpm sim` y adjuntá una foto de un recibo
+real con el clip 📎. El flujo completo (leer el recibo -> preguntas -> plan) usa
+las dos llamadas.

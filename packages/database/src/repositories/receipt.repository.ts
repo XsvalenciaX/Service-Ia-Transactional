@@ -23,3 +23,8 @@ export async function findLatestByUserId(
     orderBy: { createdAt: "desc" },
   });
 }
+
+export async function deleteAllByUserId(userId: string): Promise<number> {
+  const { count } = await prisma.receipt.deleteMany({ where: { userId } });
+  return count;
+}

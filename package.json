@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "pnpm db:generate && pnpm --filter @energy-bot/database build && pnpm --filter @energy-bot/services build && pnpm --filter @energy-bot/bot dev",
+    "sim": "pnpm db:generate && pnpm --filter @energy-bot/database build && pnpm --filter @energy-bot/services build && pnpm --filter @energy-bot/bot sim",
     "build": "pnpm --filter @energy-bot/database build && pnpm --filter @energy-bot/services build && pnpm --filter @energy-bot/bot build",
     "db:generate": "pnpm --filter @energy-bot/database db:generate",
     "db:migrate": "pnpm --filter @energy-bot/database db:migrate",

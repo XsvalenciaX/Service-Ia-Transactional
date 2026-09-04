@@ -38,4 +38,9 @@ export async function findLatestByUserId(
   });
 }
 
+export async function deleteAllByUserId(userId: string): Promise<number> {
+  const { count } = await prisma.savingsPlan.deleteMany({ where: { userId } });
+  return count;
+}
+
 export { PlanStatus };

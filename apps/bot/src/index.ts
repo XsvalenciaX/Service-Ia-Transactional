@@ -22,6 +22,7 @@ const main = async () => {
   const { receiptFlow } = await import("./flows/receipt.flow.js");
   const { applianceFlows } = await import("./flows/appliances.flow.js");
   const { planFlow } = await import("./flows/plan.flow.js");
+  const { restartFlow } = await import("./flows/restart.flow.js");
 
   const provider = await createBaileysProvider();
 
@@ -35,7 +36,9 @@ const main = async () => {
   });
 
   const bot = await createBot({
-    flow: createFlow([welcomeFlow, receiptFlow, ...applianceFlows, planFlow]),
+    // restartFlow va primero: su keyword tiene que ganarle al WELCOME, que
+    // atiende cualquier texto que no matchee otro flow.
+    flow: createFlow([restartFlow, welcomeFlow, receiptFlow, ...applianceFlows, planFlow]),
     provider,
     // Estado interno de BuilderBot (historial de mensajes/flujo). La
     // persistencia real del negocio vive en Postgres vía @energy-bot/database.

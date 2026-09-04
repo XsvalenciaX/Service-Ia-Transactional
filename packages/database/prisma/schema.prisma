@@ -28,7 +28,7 @@ model Receipt {
   user          User     @relation(fields: [userId], references: [id])
   imagePath     String
   // Datos extraidos del recibo (consumo kWh, valor, periodo, etc).
-  // TODO: lógica de IA - hoy se guarda un mock hasta conectar la extracción real.
+  // Lo que la IA extrajo de la imagen (ver packages/services/AI_INTEGRATION.md).
   extractedData Json?
   createdAt     DateTime @default(now())
 
@@ -62,8 +62,8 @@ model SavingsPlan {
   id        String     @id @default(cuid())
   userId    String
   user      User       @relation(fields: [userId], references: [id])
-  // Contenido del plan generado por IA.
-  // TODO: lógica de IA - hoy se guarda un mock hasta conectar la generación real.
+  // Plan generado por la IA. Con status PENDIENTE es el plan genérico de
+  // fallback (la IA no estaba disponible) y habría que regenerarlo.
   content   Json?
   status    PlanStatus @default(PENDIENTE)
   createdAt DateTime   @default(now())

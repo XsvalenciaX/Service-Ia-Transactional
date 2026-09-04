@@ -1,6 +1,9 @@
 import {
   userRepository,
   conversationStateRepository,
+  receiptRepository,
+  applianceRepository,
+  planRepository,
   ConversationStep,
   type User,
   type ConversationState,
@@ -32,4 +35,19 @@ export async function advanceStep(
   step: ConversationStep
 ): Promise<ConversationState> {
   return conversationStateRepository.setStep(userId, step);
+}
+
+/**
+ * Deja al usuario como si nunca hubiera escrito: borra su recibo, sus
+ * electrodomésticos y su plan, y lo devuelve al paso de bienvenida. Sin
+ * borrar los datos previos el flujo se repetiría sobre ellos y el plan
+ * terminaría generándose con electrodomésticos duplicados.
+ */
+export async function resetConversation(
+  userId: string
+): Promise<ConversationState> {
+  await planRepository.deleteAllByUserId(userId);
+  await applianceRepository.deleteAllByUserId(userId);
+  await receiptRepository.deleteAllByUserId(userId);
+  return conversationStateRepository.setStep(userId, ConversationStep.WELCOME);
 }

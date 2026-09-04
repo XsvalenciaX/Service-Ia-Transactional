@@ -1,0 +1,457 @@
+<!doctype html>
+<!--
+  Fuente del PDF que está al lado (consumo-ia.pdf). Para regenerarlo después
+  de editar este archivo, con Chrome instalado:
+
+    chrome --headless=new --no-pdf-header-footer       --print-to-pdf=<ruta-sin-espacios>/consumo-ia.pdf       file:///<ruta-de-este-archivo-url-encoded>
+
+  Ojo: --print-to-pdf no admite espacios en la ruta de salida, así que hay que
+  escribirlo en una carpeta temporal y copiarlo acá.
+-->
+
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cuánto gasta energy-bot</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+  :root {
+    --ground: #fbfcfb;
+    --sheet: #ffffff;
+    --ink: #14201a;
+    --ink-soft: #4a5b52;
+    --ink-faint: #7c8b83;
+    --rule: #dae3dd;
+    --rule-strong: #14201a;
+    --green: #0d5140;
+    --green-soft: #e8f0eb;
+    --amber: #b8791a;
+    --amber-soft: #fbf1de;
+    --shadow: 0 1px 2px rgba(20, 32, 26, .06), 0 12px 32px rgba(20, 32, 26, .05);
+  }
+  :root:not([data-theme="light"]) {
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0c1310;
+      --sheet: #131c18;
+      --ink: #e6ede9;
+      --ink-soft: #a3b3ab;
+      --ink-faint: #7a8b83;
+      --rule: #26332d;
+      --rule-strong: #526158;
+      --green: #5cc9a4;
+      --green-soft: #16261f;
+      --amber: #e0a445;
+      --amber-soft: #26200f;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0c1310;
+    --sheet: #131c18;
+    --ink: #e6ede9;
+    --ink-soft: #a3b3ab;
+    --ink-faint: #7a8b83;
+    --rule: #26332d;
+    --rule-strong: #526158;
+    --green: #5cc9a4;
+    --green-soft: #16261f;
+    --amber: #e0a445;
+    --amber-soft: #26200f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Sans 3", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+    padding: 32px 20px 72px;
+  }
+
+  .sheet {
+    max-width: 820px;
+    margin: 0 auto;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+  }
+
+  /* ── Encabezado, con el aire de una cabecera de factura ── */
+  .head {
+    padding: 28px 34px 24px;
+    border-bottom: 3px double var(--rule-strong);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px 32px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  h1 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: clamp(28px, 5vw, 40px);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.05;
+    margin: 6px 0 0;
+    text-wrap: balance;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin: 0;
+  }
+  .meta {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.9;
+    color: var(--ink-soft);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  section { padding: 30px 34px; border-bottom: 1px solid var(--rule); }
+  section:last-child { border-bottom: 0; }
+
+  h2 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 18px;
+  }
+  h3 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -.01em;
+  }
+  p { margin: 0 0 14px; max-width: 66ch; color: var(--ink-soft); }
+  p:last-child { margin-bottom: 0; }
+  p b, li b { color: var(--ink); font-weight: 600; }
+  a { color: var(--green); }
+
+  .num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Renglones de la liquidación ── */
+  .lines { display: flex; flex-direction: column; }
+  .line {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 24px;
+    padding: 16px 0;
+    border-bottom: 1px dotted var(--rule);
+    align-items: baseline;
+  }
+  .line:first-child { padding-top: 0; }
+  .line:last-child { border-bottom: 0; padding-bottom: 0; }
+  .line .when { grid-column: 1; font-size: 14.5px; color: var(--ink-soft); max-width: 52ch; }
+  .line .price {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    text-align: right;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .line .price small {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-faint);
+    letter-spacing: .03em;
+    margin-top: 2px;
+  }
+
+  /* ── Total, el bloque destacado de una factura ── */
+  .total {
+    margin-top: 24px;
+    border: 2px solid var(--green);
+    background: var(--green-soft);
+    padding: 18px 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 28px;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .total .label {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+  .total .label span { display: block; font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink-soft); margin-top: 3px; }
+  .total .value {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(26px, 5vw, 34px);
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -.02em;
+  }
+
+  /* ── Tabla de medición ── */
+  .scroll { overflow-x: auto; margin: 0 -34px; padding: 0 34px; }
+  table { border-collapse: collapse; width: 100%; min-width: 500px; }
+  th, td { text-align: right; padding: 9px 0 9px 20px; border-bottom: 1px solid var(--rule); }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  thead th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom-color: var(--rule-strong);
+    padding-bottom: 7px;
+  }
+  tbody td { font-size: 14.5px; }
+  tbody td:not(:first-child) {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  /* ── Barra de composición ── */
+  .bar { display: flex; height: 34px; margin: 4px 0 14px; border: 1px solid var(--rule-strong); }
+  .bar div { height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13.5px; color: var(--ink-soft); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .chip { width: 11px; height: 11px; flex: none; border: 1px solid var(--rule-strong); }
+
+  /* ── Capacidad: cuántas peticiones entran ── */
+  .capacity { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .capacity > div { background: var(--sheet); padding: 18px 20px; }
+  .capacity .big {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--green);
+    letter-spacing: -.02em;
+  }
+  .capacity .what { font-size: 14px; color: var(--ink); font-weight: 600; margin-top: 6px; }
+  .capacity .detail { font-size: 13px; color: var(--ink-faint); margin-top: 2px; }
+
+  ul { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 16px; }
+  ul li { padding-left: 18px; border-left: 2px solid var(--rule); color: var(--ink-soft); max-width: 66ch; font-size: 15px; }
+  ul li.flag { border-left-color: var(--amber); }
+
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .88em;
+    background: var(--green-soft);
+    padding: 1.5px 5px;
+    border-radius: 2px;
+    color: var(--ink);
+  }
+
+  .log {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px;
+    line-height: 1.75;
+    background: var(--ground);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--amber);
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink-soft);
+    margin: 0 0 14px;
+  }
+
+  footer {
+    max-width: 820px;
+    margin: 20px auto 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    color: var(--ink-faint);
+    text-align: center;
+  }
+</style>
+
+<style>
+  /* Ajustes sólo para el PDF: hoja carta, tema claro fijo y cortes de página
+     que no parten un renglón de la liquidación ni una tabla por la mitad. */
+  @page { size: Letter; margin: 13mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @media print {
+    body { padding: 0; background: #fff; }
+    .sheet { max-width: none; border: none; box-shadow: none; }
+    .line, .total, .capacity, .log, table, .bar, .legend, li { break-inside: avoid; }
+    h2, h3 { break-after: avoid; }
+    section { padding: 24px 0; }
+    .head { padding: 0 0 20px; }
+    .scroll { margin: 0; padding: 0; }
+    footer { margin-top: 16px; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="sheet">
+
+  <header class="head">
+    <div>
+      <p class="eyebrow">Liquidación de consumo · API</p>
+      <h1>Cuánto gasta energy-bot</h1>
+    </div>
+    <div class="meta">
+      Modelo <b>claude-haiku-4-5</b><br>
+      Entrada <b>USD 1,00</b> / millón de tokens<br>
+      Salida <b>USD 5,00</b> / millón de tokens
+    </div>
+  </header>
+
+  <section>
+    <h2>Qué consume</h2>
+    <p>El bot le habla al modelo en tres momentos. Nada más gasta: los saludos, los botones Sí/No, guardar en Postgres y el comando <code>reiniciar</code> no cuestan nada porque no salen de tu máquina.</p>
+
+    <div class="lines">
+      <div class="line">
+        <h3>Leer el recibo</h3>
+        <p class="when">Una vez por conversación, cuando el usuario manda la foto. Es la llamada con imagen: la foto sola son unos 1.000 tokens, dos tercios del costo del renglón.</p>
+        <div class="price">0,0018<small>USD</small></div>
+      </div>
+      <div class="line">
+        <h3>Generar el plan</h3>
+        <p class="when">Una vez por conversación, al terminar las preguntas. Es la más cara porque reenvía la foto del recibo y además escribe texto largo.</p>
+        <div class="price">0,0031<small>USD</small></div>
+      </div>
+      <div class="line">
+        <h3>Responder una pregunta libre</h3>
+        <p class="when">Cada vez que el usuario escribe algo fuera de guion, en cualquier paso. Sin imagen y con respuesta corta, es la más barata. Es la única que se repite sin límite.</p>
+        <div class="price">0,0013<small>USD</small></div>
+      </div>
+    </div>
+
+    <div class="total">
+      <div class="label">
+        Total por conversación completa
+        <span>Recibo + plan, sin preguntas de por medio</span>
+      </div>
+      <div class="value">USD 0,0050</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Medición real</h2>
+    <p>No son estimaciones: son las llamadas que corrieron en las pruebas de hoy, leídas del log <code>[ai]</code> que imprime la consola.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Llamada</th>
+            <th>Tokens entrada</th>
+            <th>Tokens salida</th>
+            <th>Costo USD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Leer el recibo</td><td>1.436</td><td>77</td><td>0,00182</td></tr>
+          <tr><td>Generar el plan</td><td>1.461</td><td>335</td><td>0,00314</td></tr>
+          <tr><td>Pregunta sobre su plan</td><td>762</td><td>111</td><td>0,00132</td></tr>
+          <tr><td>Pregunta fuera de tema</td><td>740</td><td>83</td><td>0,00115</td></tr>
+          <tr><td>Pregunta durante el flujo</td><td>761</td><td>141</td><td>0,00147</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cuántas peticiones entran en USD 5</h2>
+    <p>Tres escenarios, según cuánto pregunte la gente. El del medio es el realista.</p>
+
+    <div class="capacity">
+      <div>
+        <div class="big">1.000</div>
+        <div class="what">conversaciones al hilo</div>
+        <div class="detail">Recibo + plan, sin preguntas</div>
+      </div>
+      <div>
+        <div class="big">560</div>
+        <div class="what">conversaciones con preguntas</div>
+        <div class="detail">Recibo + plan + 3 preguntas</div>
+      </div>
+      <div>
+        <div class="big">3.800</div>
+        <div class="what">preguntas sueltas</div>
+        <div class="detail">Si sólo se conversa, sin recibo</div>
+      </div>
+    </div>
+
+    <p style="margin-top:22px">Así se reparte el gasto de una conversación con tres preguntas — <b class="num">USD 0,0089</b> en total:</p>
+    <div class="bar" role="img" aria-label="Composición del costo: plan 35%, preguntas 44%, recibo 20%">
+      <div style="width:20.4%;background:var(--green)"></div>
+      <div style="width:35.3%;background:var(--amber)"></div>
+      <div style="width:44.3%;background:var(--green-soft)"></div>
+    </div>
+    <div class="legend">
+      <span><i class="chip" style="background:var(--green)"></i> Recibo · 0,0018</span>
+      <span><i class="chip" style="background:var(--amber)"></i> Plan · 0,0031</span>
+      <span><i class="chip" style="background:var(--green-soft)"></i> 3 preguntas · 0,0039</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>La pregunta libre, en detalle</h2>
+    <p><b>USD 0,0013 cada una</b> — entre 0,0012 y 0,0015 según lo que conteste. Unos 750 tokens de entrada y 100 de salida. Con los USD 5 de crédito son <b>unas 3.800 preguntas</b>: para que se te acabe el saldo sólo con esto, alguien tendría que escribirte más de diez mensajes por día durante un año.</p>
+    <p>Los 750 tokens de entrada no dependen de lo que pregunte: son casi todos el contexto que le mandamos en cada mensaje — las reglas de qué puede y qué no puede responder, más el recibo, los electrodomésticos y el plan de ese usuario. Eso es lo que hace que conteste con <em>sus</em> números y no con generalidades.</p>
+    <p>Sale barata porque no lleva imagen y responde en dos o tres frases. Rechazar una pregunta fuera de tema cuesta lo mismo que contestar una buena: el modelo igual tiene que leer todo para decidir.</p>
+  </section>
+
+  <section>
+    <h2>Para gastar menos</h2>
+    <ul>
+      <li><b>No reenviar la foto al generar el plan.</b> Hoy el plan manda otra vez la imagen del recibo por si el modelo necesita volver a mirarla, y eso son ~1.000 tokens que ya extrajimos. Sacarlo baja el plan de 0,0031 a unos 0,0011: la conversación pasa de 0,0050 a <b>0,0030</b>, un 40% menos. Es una línea de código; el costo es que el plan se arma sólo con los datos extraídos.</li>
+      <li><b>La heurística de preguntas ya te está ahorrando.</b> Durante las preguntas de electrodomésticos, decidir si el usuario respondió o preguntó se hace con una regla local, no con el modelo. Si esa clasificación la hiciera la IA serían 6 llamadas más por conversación: <b>+0,0078</b>, más del doble de lo que sale hoy.</li>
+      <li class="flag"><b>No hay tope por usuario.</b> Cada mensaje fuera de guion es una llamada, y nada impide que una sola persona mande cien. Cien mensajes son USD 0,13 — poco, salvo que alguien lo haga a propósito. Si el bot va a estar abierto al público, conviene un límite diario de preguntas por número antes de publicarlo.</li>
+      <li><b>Subir de modelo multiplica todo.</b> Con <code>claude-sonnet-5</code> la conversación pasa a 0,0096 y con <code>claude-opus-5</code> a 0,024 — 2x y 5x. Se cambia con <code>AI_MODEL</code> en el <code>.env</code>, así que probalo sólo si Haiku falla leyendo recibos reales.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Cómo verlo en vivo</h2>
+    <p>Cada llamada se imprime en la consola donde corre <code>pnpm sim</code> o <code>pnpm dev</code>, con el acumulado desde que arrancó el proceso:</p>
+    <div class="log">[ai] claude-haiku-4-5 · 1436 tokens in / 77 out · ~USD 0.00182 · acumulado USD 0.00182
+[ai] claude-haiku-4-5 · 1461 tokens in / 335 out · ~USD 0.00314 · acumulado USD 0.00496</div>
+    <p>El saldo real y la facturación oficial están en <a href="https://console.anthropic.com/settings/usage">console.anthropic.com → Usage</a>. El acumulado del log se reinicia cada vez que reiniciás el proceso.</p>
+  </section>
+
+</div>
+
+<footer>Medido el 3 de septiembre de 2026 · tarifas de claude-haiku-4-5 vigentes a esa fecha</footer>
+
+</body>
+</html>

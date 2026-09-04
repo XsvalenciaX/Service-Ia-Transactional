@@ -25,4 +25,9 @@ export async function findAllByUserId(userId: string): Promise<Appliance[]> {
   });
 }
 
+export async function deleteAllByUserId(userId: string): Promise<number> {
+  const { count } = await prisma.appliance.deleteMany({ where: { userId } });
+  return count;
+}
+
 export { ApplianceType };
