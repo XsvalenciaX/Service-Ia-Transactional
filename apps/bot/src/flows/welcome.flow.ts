@@ -24,12 +24,14 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     );
 
     if (state.currentStep === ConversationStep.WELCOME) {
+
       await flowDynamic(
-        "¡Hola! 👋 Soy tu asistente de ahorro energético. Te voy a ayudar a armar un plan personalizado para reducir tu consumo eléctrico en un 15%."
-      );
+          "¡Hola! 👋 Soy tu asistente de ahorro energético para tu hogar o comercio. Te voy a ayudar a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
+        );
+
       await flowDynamic(
-        "Para empezar, envíame una *foto de tu recibo de energía* más reciente. 📸"
-      );
+          "Para empezar, envíame una *foto de tu recibo o factura de energía* más reciente.\nToma la foto donde se muestre el consumo promedio en kWh. 📸"
+        );
 
       await conversationStateService.advanceStep(
         user.id,
