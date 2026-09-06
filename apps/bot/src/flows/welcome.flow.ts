@@ -1,10 +1,5 @@
 import { addKeyword, EVENTS } from "@builderbot/bot";
-import {
-  assistantService,
-  conversationStateService,
-  ConversationStep,
-} from "@energy-bot/services";
-import { isTextMessage } from "../utils/message-validation.js";
+import { conversationStateService, ConversationStep } from "@energy-bot/services";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 /**
@@ -18,10 +13,10 @@ import type { FlowContext, FlowMethods } from "../types/flow.js";
  * - Recién habilitado para un plan nuevo (pasaron los días mínimos desde el
  *   último): se lo avisamos y le pedimos la foto del recibo actualizado.
  * - Esperando la foto (AWAITING_RECEIPT): si escribe texto en vez de mandar
- *   la foto, se lo recordamos sin pasar por la IA — acá la IA sólo lee
- *   imágenes (ver receipt.flow.ts).
- * - En cualquier otro paso: lo que escriba fuera de guion (una pregunta
- *   sobre su plan, o algo que no tiene nada que ver) lo contesta la IA.
+ *   la foto, se lo recordamos.
+ * - En cualquier otro paso (típicamente COMPLETED): mensaje fijo. El bot es
+ *   100% guiado, no hay IA respondiendo texto libre — los comandos para ver
+ *   el plan, borrar el progreso, etc. van a vivir en una plantilla aparte.
  */
 export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
   async (ctx: FlowContext, { flowDynamic, endFlow }: FlowMethods) => {
@@ -71,17 +66,6 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
       return;
     }
 
-    // Audios, stickers y demás: no hay nada que responder.
-    if (!isTextMessage(ctx)) {
-      return endFlow();
-    }
-
-    const { reply } = await assistantService.answerQuestion(
-      user.id,
-      ctx.body,
-      state.currentStep
-    );
-
-    await flowDynamic(reply);
+    await flowDynamic("No entendí ese mensaje. 🤖");
   }
 );
