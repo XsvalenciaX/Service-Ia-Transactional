@@ -19,6 +19,16 @@ export function isRestartCommand(text: string): boolean {
   return RESTART_KEYWORDS.includes(normalized);
 }
 
+/**
+ * "reiniciar" es un atajo para desarrollo/pruebas: en producción no debería
+ * poder saltarse el bloqueo diario ni el mínimo de días entre planes, así
+ * que ahí no hace nada (ver conversationStateService.MIN_DAYS_BETWEEN_PLANS
+ * y lockUntilTomorrow).
+ */
+function isRestartAllowed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 export const restartFlow = addKeyword(RESTART_KEYWORDS).addAction(
   async (ctx: FlowContext, { flowDynamic, gotoFlow }: FlowMethods) => {
     const { user, state, justUnlocked } = await conversationStateService.getOrCreateSession(
@@ -28,6 +38,11 @@ export const restartFlow = addKeyword(RESTART_KEYWORDS).addAction(
     // Bloqueado: ni "reiniciar" lo saca del castigo hasta que pase el día.
     if (!justUnlocked && state.currentStep === ConversationStep.LOCKED) {
       return;
+    }
+
+    if (!isRestartAllowed()) {
+      // En producción tratamos "reiniciar" como cualquier otro mensaje.
+      return gotoFlow(welcomeFlow);
     }
 
     await conversationStateService.resetConversation(user.id);
