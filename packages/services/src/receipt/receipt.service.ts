@@ -76,6 +76,14 @@ async function analyzeReceiptWithModel(
       system: ANALYSIS_SYSTEM,
       prompt: request.instructions,
       image: request.image,
+      mock: () => ({
+        valid: true,
+        consumptionKwh: 350,
+        amount: 185000,
+        currency: "COP",
+        periodStart: "2026-08-01",
+        periodEnd: "2026-08-31",
+      }),
     });
   } catch (error) {
     if (error instanceof AiError) {

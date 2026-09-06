@@ -129,6 +129,16 @@ async function generatePlanContent(
       prompt: `${request.context}\n\n${request.instructions}`,
       image: request.image,
       maxTokens: 4096,
+      mock: () => ({
+        targetReductionPercent: 15,
+        summary:
+          "Plan simulado (AI_MOCK=true, no se llamó a la IA real) a partir de tus datos.",
+        recommendations: [
+          "Usá el aire acondicionado en 24 °C y apagalo media hora antes de salir.",
+          "Planchá toda la ropa junta en una sola tanda, en vez de prender la plancha varias veces.",
+          "Aprovechá el calor residual del horno: apagalo unos minutos antes de terminar la cocción.",
+        ],
+      }),
     });
   } catch (error) {
     if (error instanceof AiError) {
