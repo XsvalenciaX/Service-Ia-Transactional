@@ -5,6 +5,7 @@ import {
   ConversationStep,
 } from "@energy-bot/services";
 import { applianceIntroFlow } from "./appliances.flow.js";
+import { manualConsumptionFlow } from "./manual-consumption.flow.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
@@ -14,7 +15,8 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
     );
 
     if (state.currentStep !== ConversationStep.AWAITING_RECEIPT) {
-      // No estábamos esperando un recibo de este usuario en este momento.
+      // No estábamos esperando un recibo de este usuario en este momento
+      // (cubre también a los usuarios LOCKED: ese step nunca es este).
       return;
     }
 
@@ -27,8 +29,24 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
     const { analysis } = await receiptService.processReceipt(user.id, imagePath);
 
     if (!analysis.valid) {
+      const updated = await conversationStateService.registerFailedReceiptAttempt(
+        user.id
+      );
+
+      if (updated.receiptAttempts >= conversationStateService.MAX_RECEIPT_ATTEMPTS) {
+        await flowDynamic(
+          `⚠️ No pude leer tu recibo después de ${conversationStateService.MAX_RECEIPT_ATTEMPTS} intentos. ` +
+            "Escribime el *consumo promedio en kWh* de tu factura (por ejemplo: 350)."
+        );
+        await conversationStateService.advanceStep(
+          user.id,
+          ConversationStep.ASKING_MANUAL_CONSUMPTION
+        );
+        return gotoFlow(manualConsumptionFlow);
+      }
+
       await flowDynamic(
-        `⚠️ No pude leer el recibo. ${
+        `⚠️ No pude leer el recibo (intento ${updated.receiptAttempts}/${conversationStateService.MAX_RECEIPT_ATTEMPTS}). ${
           analysis.recommendation ??
           "Probá enviar una foto más clara, con todo el recibo dentro del encuadre."
         }`

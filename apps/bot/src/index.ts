@@ -19,6 +19,7 @@ const main = async () => {
   const { provider } = await import("./provider/twilio.provider.js");
   const { welcomeFlow } = await import("./flows/welcome.flow.js");
   const { receiptFlow } = await import("./flows/receipt.flow.js");
+  const { manualConsumptionFlow } = await import("./flows/manual-consumption.flow.js");
   const { applianceFlows } = await import("./flows/appliances.flow.js");
   const { planFlow } = await import("./flows/plan.flow.js");
   const { restartFlow } = await import("./flows/restart.flow.js");
@@ -26,7 +27,14 @@ const main = async () => {
   const bot = await createBot({
     // restartFlow va primero: su keyword tiene que ganarle al WELCOME, que
     // atiende cualquier texto que no matchee otro flow.
-    flow: createFlow([restartFlow, welcomeFlow, receiptFlow, ...applianceFlows, planFlow]),
+    flow: createFlow([
+      restartFlow,
+      welcomeFlow,
+      receiptFlow,
+      manualConsumptionFlow,
+      ...applianceFlows,
+      planFlow,
+    ]),
     provider,
     // Estado interno de BuilderBot (historial de mensajes/flujo). La
     // persistencia real del negocio vive en Postgres vía @energy-bot/database.

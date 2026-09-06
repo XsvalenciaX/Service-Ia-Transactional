@@ -1,5 +1,5 @@
 import { addKeyword } from "@builderbot/bot";
-import { conversationStateService } from "@energy-bot/services";
+import { conversationStateService, ConversationStep } from "@energy-bot/services";
 import { welcomeFlow } from "./welcome.flow.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
@@ -21,7 +21,15 @@ export function isRestartCommand(text: string): boolean {
 
 export const restartFlow = addKeyword(RESTART_KEYWORDS).addAction(
   async (ctx: FlowContext, { flowDynamic, gotoFlow }: FlowMethods) => {
-    const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+    const { user, state, justUnlocked } = await conversationStateService.getOrCreateSession(
+      ctx.from
+    );
+
+    // Bloqueado: ni "reiniciar" lo saca del castigo hasta que pase el día.
+    if (!justUnlocked && state.currentStep === ConversationStep.LOCKED) {
+      return;
+    }
+
     await conversationStateService.resetConversation(user.id);
 
     await flowDynamic(

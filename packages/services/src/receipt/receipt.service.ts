@@ -124,3 +124,18 @@ export async function processReceipt(
 
   return { analysis, receipt };
 }
+
+/**
+ * Se usa cuando se agotaron los intentos de leer la foto: el usuario mismo
+ * escribe su consumo promedio. Sin `imagePath` ni el resto de los datos del
+ * recibo (monto, período), sólo el kWh que dio.
+ */
+export async function saveManualConsumption(
+  userId: string,
+  consumptionKwh: number
+): Promise<Receipt> {
+  return receiptRepository.create({
+    userId,
+    extractedData: { consumptionKwh, source: "manual" },
+  });
+}
