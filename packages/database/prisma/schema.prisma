@@ -47,7 +47,7 @@ model Appliance {
   user             User          @relation(fields: [userId], references: [id])
   type             ApplianceType
   frequencyPerWeek Int?
-  usageNote        String?
+  hoursPerDay      Int?
   createdAt        DateTime      @default(now())
 
   @@map("appliances")

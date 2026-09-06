@@ -6,14 +6,14 @@ export async function create(data: {
   userId: string;
   type: ApplianceType;
   frequencyPerWeek?: number;
-  usageNote?: string;
+  hoursPerDay?: number;
 }): Promise<Appliance> {
   return prisma.appliance.create({
     data: {
       userId: data.userId,
       type: data.type,
       frequencyPerWeek: data.frequencyPerWeek,
-      usageNote: data.usageNote,
+      hoursPerDay: data.hoursPerDay,
     },
   });
 }

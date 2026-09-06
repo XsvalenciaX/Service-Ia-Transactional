@@ -41,7 +41,7 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
 - Respondé únicamente con el JSON pedido.`;
 
 const APPLIANCE_QUESTIONS: Record<ApplianceType, string> = {
-  [ApplianceType.AIRE]: "¿Tenés aire acondicionado? ¿Cuántas veces por semana y cuántas horas lo usás?",
+  [ApplianceType.AIRE]: "¿Tenés aire acondicionado? ¿Cuántas horas por día lo dejás encendido en promedio?",
   [ApplianceType.PLANCHA]: "¿Tenés plancha? ¿Cuántas veces por semana la usás?",
   [ApplianceType.HORNO_AIRFRYER]:
     "¿Tenés horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces por semana lo usás?",
@@ -55,11 +55,13 @@ function buildApplianceQaText(appliances: Appliance[]): string {
   return appliances
     .map((appliance) => {
       const question = APPLIANCE_QUESTIONS[appliance.type];
-      const frequency =
-        appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined
-          ? `${appliance.frequencyPerWeek} veces/semana`
-          : "frecuencia no especificada";
-      return `Pregunta: ${question}\nRespuesta: ${appliance.usageNote ?? "sin detalle"} (${frequency})`;
+      const detail =
+        appliance.hoursPerDay !== null && appliance.hoursPerDay !== undefined
+          ? `${appliance.hoursPerDay} horas/día`
+          : appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined
+            ? `${appliance.frequencyPerWeek} veces/semana`
+            : "sin detalle";
+      return `Pregunta: ${question}\nRespuesta: ${detail}`;
     })
     .join("\n\n");
 }

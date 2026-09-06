@@ -1,168 +1,288 @@
 import { addKeyword } from "@builderbot/bot";
 import {
   appliancesService,
-  assistantService,
   conversationStateService,
   ConversationStep,
 } from "@energy-bot/services";
 import { planFlow } from "./plan.flow.js";
 import { isRestartCommand, restartFlow } from "./restart.flow.js";
-import { isTextMessage, looksLikeQuestion } from "../utils/message-validation.js";
+import { isTextMessage } from "../utils/message-validation.js";
+import { sendTemplate } from "../provider/send-template.js";
+import {
+  APPLIANCE_QUESTIONS,
+  type ApplianceQuestion,
+  type TextQuestion,
+} from "./appliance-questions.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 import type { TFlow } from "@builderbot/bot/dist/types.js";
+import type { ApplianceType } from "@energy-bot/services";
 
-function extractFrequency(text: string): number | undefined {
-  const match = new RegExp(/\d+/).exec(text);
-  return match ? Number(match[0]) : undefined;
-}
-
-// Heurística simple (no es IA): si el usuario empieza su respuesta con "no",
-// asumimos que no tiene el electrodoméstico. Cualquier otra cosa (el botón
-// "Sí", "sí", "claro", "tengo uno"...) se trata como afirmativa.
-function isNegative(text: string): boolean {
-  return /^no\b/i.test(text.trim());
-}
+// Clave de state (BuilderBot, en memoria por número — no es la Postgres de
+// @energy-bot/database) para cargar la frecuencia del aire de un paso al
+// siguiente, hasta que la pregunta de horas la guarda junto con ella en un
+// solo Appliance.
+const PENDING_FREQUENCY_KEY = "pendingApplianceFrequency";
 
 /**
- * El usuario preguntó algo en vez de contestar. Le respondemos con la IA y
- * volvemos a hacerle la pregunta del paso, sin perder el lugar en el flujo.
+ * Pregunta de texto libre validada contra `question.validation.pattern`
+ * (p.ej. sólo números). Mientras no matchee, se repite el feedback y la
+ * pregunta sin avanzar y sin pasar por la IA — eso sólo pasa al final del
+ * cuestionario, en el catch-all de welcome.flow.ts. Guarda un solo campo y
+ * avanza al siguiente paso.
  */
-async function answerAndAskAgain(
-  ctx: FlowContext,
-  fallBack: FlowMethods["fallBack"],
-  question: string
-) {
-  const { user, state } = await conversationStateService.getOrCreateSession(
-    ctx.from
-  );
-  const { reply } = await assistantService.answerQuestion(
-    user.id,
-    ctx.body,
-    state.currentStep
-  );
-  return fallBack(`${reply}\n\n${question}`);
-}
-
-/**
- * Crea el par de flujos (pregunta sí/no + pregunta de frecuencia) para un
- * electrodoméstico. Si el usuario responde "No", nos saltamos la pregunta de
- * frecuencia y no se guarda ningún `Appliance`; si responde afirmativo,
- * pasamos a pedir la frecuencia/horas de uso y ahí sí se guarda.
- */
-function buildApplianceStep(options: {
+function buildTextQuestionFlow(options: {
   triggerKeyword: string;
-  applianceType: appliancesService.ApplianceType;
-  yesNoQuestion: string;
-  frequencyQuestion: string;
-  nextConversationStep: ConversationStep;
+  question: TextQuestion;
+  applianceType: ApplianceType;
+  nextStep: ConversationStep;
   next: TFlow;
-}) {
-  const frequencyFlow = addKeyword([`${options.triggerKeyword}_frequency`]).addAnswer(
-    options.frequencyQuestion,
+}): TFlow {
+  return addKeyword([options.triggerKeyword]).addAnswer(
+    options.question.prompt,
     { capture: true },
     async (ctx: FlowContext, { gotoFlow, fallBack }: FlowMethods) => {
-      if (!isTextMessage(ctx)) {
-        return fallBack("Necesito que me respondas con un mensaje de *texto*, por favor 🙏");
-      }
-
-      // Este capture se lleva el mensaje antes de que BuilderBot evalúe las
-      // keywords, así que el comando de reinicio hay que atenderlo acá.
       if (isRestartCommand(ctx.body)) {
         return gotoFlow(restartFlow);
       }
 
-      if (looksLikeQuestion(ctx.body)) {
-        return answerAndAskAgain(ctx, fallBack, options.frequencyQuestion);
+      const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+      if (!isTextMessage(ctx) || !options.question.validation.pattern.test(body)) {
+        return fallBack(options.question.validation.feedback);
       }
 
       const { user } = await conversationStateService.getOrCreateSession(ctx.from);
       await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
-        frequencyPerWeek: extractFrequency(ctx.body),
-        usageNote: ctx.body,
+        [options.question.field]: Number(body),
       });
-      await conversationStateService.advanceStep(user.id, options.nextConversationStep);
+      await conversationStateService.advanceStep(user.id, options.nextStep);
       return gotoFlow(options.next);
     }
   );
+}
 
-  const gateFlow = addKeyword([options.triggerKeyword]).addAnswer(
-    options.yesNoQuestion,
-    { capture: true, buttons: [{ body: "Sí" }, { body: "No" }] },
-    async (ctx: FlowContext, { gotoFlow, fallBack }: FlowMethods) => {
-      if (!isTextMessage(ctx)) {
-        return fallBack("Necesito que me respondas con un mensaje de *texto*, por favor 🙏");
-      }
-
-      // Ídem que en frequencyFlow: acá también hay capture de por medio.
+/**
+ * Última pregunta de la cadena lista→horas del aire: guarda la frecuencia
+ * que quedó pendiente en `state` (elegida en la lista o en el overflow)
+ * junto con esta respuesta, en un solo `Appliance`, y recién ahí avanza.
+ */
+function buildThenQuestionFlow(options: {
+  triggerKeyword: string;
+  question: TextQuestion;
+  applianceType: ApplianceType;
+  nextStep: ConversationStep;
+  next: TFlow;
+}): TFlow {
+  return addKeyword([options.triggerKeyword]).addAnswer(
+    options.question.prompt,
+    { capture: true },
+    async (ctx: FlowContext, { gotoFlow, fallBack, state }: FlowMethods) => {
       if (isRestartCommand(ctx.body)) {
         return gotoFlow(restartFlow);
       }
 
-      if (looksLikeQuestion(ctx.body)) {
-        return answerAndAskAgain(ctx, fallBack, options.yesNoQuestion);
+      const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+      if (!isTextMessage(ctx) || !options.question.validation.pattern.test(body)) {
+        return fallBack(options.question.validation.feedback);
       }
 
-      if (isNegative(ctx.body)) {
-        const { user } = await conversationStateService.getOrCreateSession(ctx.from);
-        await conversationStateService.advanceStep(user.id, options.nextConversationStep);
-        return gotoFlow(options.next);
-      }
-      return gotoFlow(frequencyFlow);
+      const frequencyPerWeek = state.get<number>(PENDING_FREQUENCY_KEY);
+      const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+      await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
+        frequencyPerWeek,
+        [options.question.field]: Number(body),
+      });
+      await conversationStateService.advanceStep(user.id, options.nextStep);
+      return gotoFlow(options.next);
     }
   );
+}
 
-  return { gateFlow, frequencyFlow };
+/**
+ * Pregunta libre de "7 o más": pide el número exacto (validado como "mayor
+ * o igual a 7"), lo deja pendiente en `state` y sigue a la pregunta de
+ * horas — no guarda nada en la base todavía.
+ */
+function buildOverflowFlow(options: {
+  triggerKeyword: string;
+  overflow: Extract<ApplianceQuestion["followUp"], { kind: "list" }>["overflow"];
+  thenFlow: TFlow;
+}): TFlow {
+  return addKeyword([options.triggerKeyword]).addAnswer(
+    options.overflow.prompt,
+    { capture: true },
+    async (ctx: FlowContext, { gotoFlow, fallBack, state }: FlowMethods) => {
+      if (isRestartCommand(ctx.body)) {
+        return gotoFlow(restartFlow);
+      }
+
+      const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+      if (!isTextMessage(ctx) || !options.overflow.validation.pattern.test(body)) {
+        return fallBack(options.overflow.validation.feedback);
+      }
+
+      await state.update({ [PENDING_FREQUENCY_KEY]: Number(body) });
+      return gotoFlow(options.thenFlow);
+    }
+  );
+}
+
+/**
+ * Pregunta con lista de Twilio (sólo el aire). Elegir 1-6 deja
+ * esa frecuencia pendiente en `state` y sigue a la pregunta de horas;
+ * elegir "7 o más" pasa al overflow, que pide el número exacto. Cualquier
+ * otra respuesta reenvía la lista + el feedback
+ */
+function buildListQuestionFlow(options: {
+  triggerKeyword: string;
+  question: Extract<ApplianceQuestion["followUp"], { kind: "list" }>;
+  overflowFlow: TFlow;
+  thenFlow: TFlow;
+}): TFlow {
+  return addKeyword([options.triggerKeyword])
+    .addAction(async (ctx: FlowContext, { provider }: FlowMethods) => {
+      await sendTemplate(provider, ctx.from, options.question.template);
+    })
+    .addAction(
+      { capture: true },
+      async (ctx: FlowContext, { gotoFlow, fallBack, provider, state }: FlowMethods) => {
+        if (isRestartCommand(ctx.body)) {
+          return gotoFlow(restartFlow);
+        }
+
+        const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+
+        if (isTextMessage(ctx) && options.question.overflow.pattern.test(body)) {
+          return gotoFlow(options.overflowFlow);
+        }
+
+        if (!isTextMessage(ctx) || !options.question.validation.pattern.test(body)) {
+          await sendTemplate(provider, ctx.from, options.question.template);
+          return fallBack(options.question.validation.feedback);
+        }
+
+        await state.update({ [PENDING_FREQUENCY_KEY]: Number(body) });
+        return gotoFlow(options.thenFlow);
+      }
+    );
+}
+
+/**
+ * Pregunta sí/no con plantilla de Twilio. "No" salta la pregunta de
+ * frecuencia/uso y no guarda ningún `Appliance`; "Sí" pasa al follow-up.
+ * Cualquier otra respuesta repite la plantilla + el feedback
+ */
+function buildGateFlow(options: {
+  triggerKeyword: string;
+  gate: ApplianceQuestion["gate"];
+  nextStep: ConversationStep;
+  next: TFlow;
+  followUpFlow: TFlow;
+}): TFlow {
+  return addKeyword([options.triggerKeyword])
+    .addAction(async (ctx: FlowContext, { provider }: FlowMethods) => {
+      await sendTemplate(provider, ctx.from, options.gate.template);
+    })
+    .addAction(
+      { capture: true },
+      async (ctx: FlowContext, { gotoFlow, fallBack, provider }: FlowMethods) => {
+        if (isRestartCommand(ctx.body)) {
+          return gotoFlow(restartFlow);
+        }
+
+        const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+
+        if (isTextMessage(ctx) && options.gate.no.test(body)) {
+          const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+          await conversationStateService.advanceStep(user.id, options.nextStep);
+          return gotoFlow(options.next);
+        }
+
+        if (isTextMessage(ctx) && options.gate.yes.test(body)) {
+          return gotoFlow(options.followUpFlow);
+        }
+
+        await sendTemplate(provider, ctx.from, options.gate.template);
+        return fallBack(options.gate.feedback);
+      }
+    );
+}
+
+interface BuiltAppliance {
+  gateFlow: TFlow;
+  flows: TFlow[];
 }
 
 // Se construyen en orden inverso de dependencia: cada paso necesita conocer
-// el flujo al que saltar cuando termina (o cuando la respuesta es "No").
-const horno = buildApplianceStep({
-  triggerKeyword: "_ask_horno_",
-  applianceType: appliancesService.ApplianceType.HORNO_AIRFRYER,
-  yesNoQuestion:
-    "🍟 ¿Tienes *horno eléctrico* o *freidora de aire (air fryer)*?",
-  frequencyQuestion: "¿Cuántas veces a la semana lo usas?",
-  nextConversationStep: ConversationStep.COMPLETED,
-  next: planFlow,
-});
+// el flow al que saltar (y el ConversationStep al que avanzar) cuando
+// termina o cuando la respuesta es "No". `built[0]` es siempre el resultado
+// de la pregunta siguiente en APPLIANCE_QUESTIONS (o vacío para la última).
+const built: BuiltAppliance[] = [];
 
-const plancha = buildApplianceStep({
-  triggerKeyword: "_ask_plancha_",
-  applianceType: appliancesService.ApplianceType.PLANCHA,
-  yesNoQuestion: "👕 ¿Tienes *plancha*?",
-  frequencyQuestion: "¿Cuántas veces a la semana la usas?",
-  nextConversationStep: ConversationStep.ASKING_HORNO,
-  next: horno.gateFlow,
-});
+for (let i = APPLIANCE_QUESTIONS.length - 1; i >= 0; i--) {
+  const question = APPLIANCE_QUESTIONS[i];
+  const nextStep = APPLIANCE_QUESTIONS[i + 1]?.step ?? ConversationStep.COMPLETED;
+  const nextFlow = built[0]?.gateFlow ?? planFlow;
 
-const aire = buildApplianceStep({
-  triggerKeyword: "_ask_aire_",
-  applianceType: appliancesService.ApplianceType.AIRE,
-  yesNoQuestion: "❄️ ¿Tienes *aire acondicionado*?",
-  frequencyQuestion:
-    'Cuéntame cuántas veces a la semana lo usas y cuántas horas aproximadamente (ej: "3 veces, 2 horas").',
-  nextConversationStep: ConversationStep.ASKING_PLANCHA,
-  next: plancha.gateFlow,
-});
+  let followUpFlow: TFlow;
+  const extraFlows: TFlow[] = [];
 
-// Entrado únicamente vía gotoFlow desde receipt.flow.ts, nunca por keyword directa del usuario.
+  if (question.followUp.kind === "text") {
+    followUpFlow = buildTextQuestionFlow({
+      triggerKeyword: `_ask_${question.key}_followup_`,
+      question: question.followUp,
+      applianceType: question.applianceType,
+      nextStep,
+      next: nextFlow,
+    });
+  } else {
+    const thenFlow = buildThenQuestionFlow({
+      triggerKeyword: `_ask_${question.key}_then_`,
+      question: question.followUp.then,
+      applianceType: question.applianceType,
+      nextStep,
+      next: nextFlow,
+    });
+    extraFlows.push(thenFlow);
+
+    const overflowFlow = buildOverflowFlow({
+      triggerKeyword: `_ask_${question.key}_overflow_`,
+      overflow: question.followUp.overflow,
+      thenFlow,
+    });
+    extraFlows.push(overflowFlow);
+
+    followUpFlow = buildListQuestionFlow({
+      triggerKeyword: `_ask_${question.key}_followup_`,
+      question: question.followUp,
+      overflowFlow,
+      thenFlow,
+    });
+  }
+
+  const gateFlow = buildGateFlow({
+    triggerKeyword: `_ask_${question.key}_`,
+    gate: question.gate,
+    nextStep,
+    next: nextFlow,
+    followUpFlow,
+  });
+
+  built.unshift({ gateFlow, flows: [gateFlow, followUpFlow, ...extraFlows] });
+}
+
+
 export const applianceIntroFlow = addKeyword(["_applianceQuestionsFlow_"])
   .addAnswer(
     "Antes de seguir: esta información sobre tus electrodomésticos la uso solo para " +
-      "estimar tu consumo y es necesaria para armar tu plan de ahorro. 📋"
+      "estimar tu consumo y tu plan de ahorro. 📋"
   )
-  .addAction(async (ctx: FlowContext, { gotoFlow }: FlowMethods) => {
-    return gotoFlow(aire.gateFlow);
+  .addAction(async (_ctx: FlowContext, { gotoFlow }: FlowMethods) => {
+    return gotoFlow(built[0].gateFlow);
   });
 
-// Todos los flujos que este archivo define deben registrarse en createFlow()
+// Todos los flows que este archivo define deben registrarse en createFlow()
 // (apps/bot/src/index.ts) para que gotoFlow pueda saltar entre ellos.
 export const applianceFlows: TFlow[] = [
   applianceIntroFlow,
-  aire.gateFlow,
-  aire.frequencyFlow,
-  plancha.gateFlow,
-  plancha.frequencyFlow,
-  horno.gateFlow,
-  horno.frequencyFlow,
+  ...built.flatMap((b) => b.flows),
 ];
