@@ -27,8 +27,9 @@ model Receipt {
   userId        String
   user          User     @relation(fields: [userId], references: [id])
   imagePath     String
-  // Datos extraidos del recibo (consumo kWh, valor, periodo, etc).
-  // Lo que la IA extrajo de la imagen (ver packages/services/AI_INTEGRATION.md).
+  // Lo que la IA extrajo de la imagen: consumo del periodo, consumo promedio
+  // y fechas del periodo (ver packages/services/AI_INTEGRATION.md). Nunca
+  // montos: el bot no habla de dinero en ningun momento.
   extractedData Json?
   createdAt     DateTime @default(now())
 
@@ -90,6 +91,10 @@ model ConversationState {
   // promedio (no era una factura, o era una foto parcial). A partir del
   // tercer intento se le pide que lo escriba a mano.
   receiptAttempts Int          @default(0)
+  // Cuándo se cerró el proceso por haber agotado los intentos de foto. El
+  // cierre vale por el mes calendario: al mes siguiente el usuario puede
+  // volver a intentarlo con su nueva factura. Null = nunca se cerró.
+  closedAt    DateTime?
   updatedAt   DateTime         @updatedAt
 
   @@map("conversation_states")

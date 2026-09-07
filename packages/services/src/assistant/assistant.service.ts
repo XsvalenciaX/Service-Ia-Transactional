@@ -9,7 +9,12 @@ import {
   type SavingsPlan,
 } from "@energy-bot/database";
 import { AiError, requestJson } from "../shared/ai.js";
-import { getMonthlyPlanStatus, type MonthlyPlanStatus } from "../plan/plan.service.js";
+import {
+  calculateTargetKwh,
+  getMonthlyPlanStatus,
+  PROMISED_REDUCTION_PERCENT,
+  type MonthlyPlanStatus,
+} from "../plan/plan.service.js";
 
 export interface AssistantAnswer {
   /** false cuando la pregunta no tenía nada que ver con energía. */
@@ -48,8 +53,8 @@ usuario, sus electrodomésticos y hábitos de uso, el plan de ahorro que le arma
 cómo funciona este bot.
 
 Entra todo lo que tenga que ver con la luz, aunque no sea sobre los datos puntuales
-del usuario: cuánto cuesta el kWh, cómo se lee una factura, qué son los estratos,
-qué electrodoméstico gasta más, por qué subió la tarifa, cómo se mide el consumo.
+del usuario: cómo se lee una factura, qué son los estratos, qué electrodoméstico
+gasta más, cómo se mide el consumo, por qué pudo subirle el consumo de un mes a otro.
 Ante la duda de si una pregunta es del tema, asume que sí.
 Queda afuera lo que no tiene nada que ver: deportes, política, chistes, recetas,
 otros servicios (agua, gas, internet), consultas personales.
@@ -64,6 +69,13 @@ Si onTopic es true:
 - Responde usando los datos concretos del usuario que te paso abajo (su consumo, sus
   electrodomésticos, su plan). Si te preguntan algo de energía que no depende de sus
   datos, respóndelo igual con lo que sabes.
+- NUNCA hables de dinero: ni precios, ni tarifas, ni pesos, ni cuánto vale el kWh, ni
+  cuánto cuesta prender algo, ni cuánto se ahorra en la factura. Todo lo mides en kWh
+  o en porcentaje de consumo. Este bot habla de energía, no de plata.
+- Si te preguntan justamente por un precio, una tarifa o cuánto va a pagar: eso sigue
+  siendo onTopic true, pero no des ninguna cifra de dinero. Di en una frase que de
+  precios no te encargas y reconduce a lo que sí sabes — cuántos kWh gasta ese
+  electrodoméstico, cuánto puede bajar su consumo, qué dice su plan.
 - Sé breve: dos o tres frases, es un chat de WhatsApp.
 - Si no tienes el dato que te piden (todavía no ha mandado el recibo, por ejemplo),
   dilo y pídeselo.
@@ -79,6 +91,32 @@ Escribe en español colombiano neutro, tratando al usuario de "tú", sin markdow
 emojis al principio. Nunca uses insultos ni apodos, ni siquiera en broma o si el
 usuario te provoca, y evita modismos de otros países (nada de "boludo", "che",
 "vale", "güey").`;
+
+/**
+ * El plan se guarda con el porcentaje que se le pidió a la IA
+ * (PLAN_REDUCTION_PERCENT, 15%), pero al usuario se le prometió
+ * PROMISED_REDUCTION_PERCENT (10%). Si el asistente ve el 15% guardado se lo
+ * repite y le contradice el mensaje que ya leyó, así que se lo cambiamos por
+ * el que corresponde antes de mandárselo.
+ */
+function buildPlanForAssistant(content: unknown): Record<string, unknown> {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return {};
+  }
+
+  const { targetReductionPercent, ...resto } = content as Record<string, unknown>;
+  return { ...resto, targetReductionPercent: PROMISED_REDUCTION_PERCENT };
+}
+
+function readAverageConsumptionKwh(receipt: Receipt | null): number | undefined {
+  const data = receipt?.extractedData;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+
+  const valor = (data as Record<string, unknown>).averageConsumptionKwh;
+  return typeof valor === "number" && Number.isFinite(valor) ? valor : undefined;
+}
 
 function buildUserContext(
   receipt: Receipt | null,
@@ -110,8 +148,21 @@ function buildUserContext(
 
   partes.push(
     plan?.content
-      ? `Plan que ya le entregaste: ${JSON.stringify(plan.content)}`
+      ? `Plan que ya le entregaste: ${JSON.stringify(
+          buildPlanForAssistant(plan.content)
+        )}`
       : "Todavía no tiene un plan generado."
+  );
+
+  // La meta que el usuario vio es la prometida, no la que se le pidió a la IA.
+  const promedio = readAverageConsumptionKwh(receipt);
+  partes.push(
+    promedio !== undefined
+      ? `Meta que le prometiste: bajar ${PROMISED_REDUCTION_PERCENT}% su consumo,` +
+          ` hasta ${calculateTargetKwh(promedio)} kWh o menos en la próxima factura.` +
+          " Es la única cifra de meta que puedes nombrar."
+      : `Meta que le prometiste: bajar ${PROMISED_REDUCTION_PERCENT}% su consumo.` +
+          " Es la única cifra de meta que puedes nombrar."
   );
 
   // Sin esto el modelo inventa el mes: llegó a decir "el próximo plan es en

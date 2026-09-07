@@ -21,8 +21,8 @@ export interface ReceiptAnalysisResult {
   // en un recuadro aparte o en el gráfico de barras del historial, así que es
   // el primer dato que se pierde cuando la foto no abarca todo el recibo.
   averageConsumptionKwh?: number;
-  amount?: number;
-  currency?: string;
+  // El bot no habla de dinero en ningún momento, así que el monto de la
+  // factura no se extrae, no se guarda y no se le muestra al usuario.
   periodStart?: string;
   periodEnd?: string;
 }
@@ -49,7 +49,8 @@ Reglas:
   otros países ("boludo", "che", "güey"): pudo haberse equivocado de foto sin
   querer, así que trátalo siempre con respeto.
 - No inventes valores: si un dato no se ve en la imagen, omítelo en vez de estimarlo.
-- Los montos van como número, sin separadores de miles ni símbolo de moneda.
+- Los consumos van como número, sin separadores de miles ni unidades.
+- No extraigas montos, precios ni tarifas: no los pedimos y no se usan para nada.
 - "averageConsumptionKwh" es el promedio que la factura ya trae impreso (suele
   aparecer como "consumo promedio", "promedio últimos 6 meses", o en el gráfico
   del historial de consumo). Nunca lo calcules tú ni lo deduzcas del consumo del
@@ -63,8 +64,6 @@ Responde en JSON con esta forma exacta:
   "recommendation": string,  // solo si valid=false: por qué no se pudo leer y qué debería hacer el usuario (ej. foto borrosa, mala luz, no es un recibo)
   "consumptionKwh": number,  // solo si valid=true: consumo en kWh del período
   "averageConsumptionKwh": number, // solo si está impreso en el recibo: consumo promedio de los últimos meses. Omitir el campo si no aparece
-  "amount": number,          // solo si valid=true: monto total facturado
-  "currency": string,        // solo si valid=true: moneda del monto (ej. "COP")
   "periodStart": string,     // solo si valid=true: inicio del período facturado, formato YYYY-MM-DD
   "periodEnd": string        // solo si valid=true: fin del período facturado, formato YYYY-MM-DD
 }`;
@@ -162,8 +161,6 @@ export async function processReceipt(
     extractedData: {
       consumptionKwh: analysis.consumptionKwh,
       averageConsumptionKwh: analysis.averageConsumptionKwh,
-      amount: analysis.amount,
-      currency: analysis.currency,
       periodStart: analysis.periodStart,
       periodEnd: analysis.periodEnd,
     },

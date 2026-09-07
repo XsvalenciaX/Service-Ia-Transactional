@@ -15,6 +15,27 @@ import {
 } from "../shared/image.js";
 import { AiError, requestJson } from "../shared/ai.js";
 
+/**
+ * Lo que se le pide a la IA que ataque. El plan se diseña para 15% aunque al
+ * usuario se le prometa 10%: la diferencia es el colchón para que la meta se
+ * cumpla incluso si sigue el plan a medias.
+ */
+export const PLAN_REDUCTION_PERCENT = 15;
+
+/** Lo que se le promete al usuario y contra lo que se mide la próxima factura. */
+export const PROMISED_REDUCTION_PERCENT = 10;
+
+/**
+ * El kWh objetivo sale de una cuenta en el código, no del modelo: es el dato
+ * contra el que el usuario va a comparar su próxima factura y no puede
+ * depender de que la IA multiplique bien.
+ */
+export function calculateTargetKwh(averageConsumptionKwh: number): number {
+  return Math.round(
+    averageConsumptionKwh * (1 - PROMISED_REDUCTION_PERCENT / 100)
+  );
+}
+
 export interface SavingsPlanContent {
   targetReductionPercent: number;
   summary: string;
@@ -33,8 +54,20 @@ un usuario de WhatsApp un plan para reducir un 15% su consumo eléctrico.
 Trabajas con dos insumos: los datos del recibo de luz del usuario y las respuestas
 que dio sobre cómo usa sus electrodomésticos. Reglas:
 - Basa cada recomendación en esos datos concretos: menciona el electrodoméstico y la
-  frecuencia que el usuario declaró, y cuando tengas el consumo o el monto del
-  recibo, úsalos para dimensionar el ahorro.
+  frecuencia que el usuario declaró, y usa el consumo en kWh del recibo para
+  dimensionar el ahorro.
+- Prioriza los electrodomésticos de mayor potencia entre los que el usuario declaró
+  tener: el aire acondicionado gasta mucho más que el horno o la freidora de aire, y
+  esos mucho más que la plancha. Las primeras recomendaciones tienen que atacar los
+  de mayor consumo, que es donde está el grueso del 15%.
+- Nunca hables de dinero: ni precios, ni pesos, ni tarifas, ni cuánto se ahorra en la
+  factura. El ahorro se cuenta en kWh y en acciones concretas.
+- No escribas NINGÚN porcentaje ni la meta total de ahorro, ni en "summary" ni en
+  "recommendations". La meta se la muestra el bot por su cuenta, con una cifra
+  distinta de la tuya: si tú también la escribes, el usuario ve dos números que no
+  coinciden. Nada de "reducir 15%", "bajar un 10%" ni "ahorrar 17 kWh en total".
+  Diseña el plan para el 15%, pero cuéntalo en acciones y, si ayuda, en los kWh que
+  ahorra cada electrodoméstico por separado.
 - Si tienes el consumo promedio de los últimos meses (averageConsumptionKwh), úsalo
   como referencia: calcula el 15% sobre ese promedio y comenta si el mes facturado
   estuvo por encima o por debajo de lo habitual. Si no lo tienes, trabaja con el
@@ -69,11 +102,39 @@ function buildApplianceQaText(appliances: Appliance[]): string {
     .join("\n\n");
 }
 
+/**
+ * Los datos del recibo tal como se guardaron, tipados para poder leerlos: en
+ * Prisma `extractedData` es un Json suelto.
+ */
+function readExtractedData(
+  receipt: Receipt | null
+): Record<string, unknown> | null {
+  const data = receipt?.extractedData;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  return data as Record<string, unknown>;
+}
+
+function readAverageConsumptionKwh(receipt: Receipt | null): number | undefined {
+  const valor = readExtractedData(receipt)?.averageConsumptionKwh;
+  return typeof valor === "number" && Number.isFinite(valor) ? valor : undefined;
+}
+
+/**
+ * El monto dejó de extraerse y de guardarse, y la migración
+ * `drop_receipt_amount` lo sacó de las filas viejas. Este filtro queda como
+ * red de seguridad para cualquier base que todavía no la haya corrido: si el
+ * dato no viaja, no hay forma de que se le escape un precio al modelo.
+ */
 function buildReceiptText(receipt: Receipt | null): string {
-  if (!receipt?.extractedData) {
+  const data = readExtractedData(receipt);
+  if (!data) {
     return "No hay datos de consumo del recibo disponibles.";
   }
-  return `Datos extraídos del recibo: ${JSON.stringify(receipt.extractedData)}`;
+
+  const { amount, currency, ...sinDinero } = data;
+  return `Datos extraídos del recibo: ${JSON.stringify(sinDinero)}`;
 }
 
 /**
@@ -100,9 +161,11 @@ async function buildPlanGenerationRequest(
 
   const context = `${buildReceiptText(receipt)}\n\nHábitos de electrodomésticos:\n${buildApplianceQaText(appliances)}`;
   const instructions =
-    "Con esta información, genera un plan de ahorro energético del 15% en JSON con esta forma: " +
+    `Con esta información, genera un plan de ahorro energético del ${PLAN_REDUCTION_PERCENT}% en JSON con esta forma: ` +
     '{ "targetReductionPercent": number, "summary": string, "recommendations": string[] }. ' +
-    'En "summary" resume en una o dos frases de qué se trata el plan y de dónde sale el ahorro.';
+    'En "summary" resume en una o dos frases de qué se trata el plan y de dónde sale el ahorro, ' +
+    "sin mencionar dinero y sin escribir ningún porcentaje ni la meta total: de eso se " +
+    "encarga el bot. En \"targetReductionPercent\" sí devuelve el número, que es de uso interno.";
 
   return { image, context, instructions };
 }
@@ -113,7 +176,7 @@ async function buildPlanGenerationRequest(
  * preguntas y el plan queda guardado como PENDIENTE para regenerarlo.
  */
 const FALLBACK_PLAN: SavingsPlanContent = {
-  targetReductionPercent: 15,
+  targetReductionPercent: PLAN_REDUCTION_PERCENT,
   summary:
     "No pude armar tu plan personalizado en este momento, así que te dejo las recomendaciones generales que más ahorro suelen dar.",
   recommendations: [
@@ -149,6 +212,11 @@ export interface GeneratedPlan {
   content: SavingsPlanContent;
   /** false cuando la IA no respondió y se guardó el plan genérico. */
   personalized: boolean;
+  /**
+   * Consumo al que hay que llegar en la próxima factura, calculado acá sobre
+   * el promedio del recibo. undefined si nunca se pudo saber el promedio.
+   */
+  targetKwh?: number;
 }
 
 export interface MonthlyPlanStatus {
@@ -208,5 +276,15 @@ export async function generateSavingsPlan(
     status: content ? PlanStatus.GENERADO : PlanStatus.PENDIENTE,
   });
 
-  return { plan, content: finalContent, personalized: content !== null };
+  const averageConsumptionKwh = readAverageConsumptionKwh(receipt);
+
+  return {
+    plan,
+    content: finalContent,
+    personalized: content !== null,
+    targetKwh:
+      averageConsumptionKwh !== undefined
+        ? calculateTargetKwh(averageConsumptionKwh)
+        : undefined,
+  };
 }

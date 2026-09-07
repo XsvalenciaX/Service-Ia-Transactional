@@ -6,7 +6,12 @@ import {
   ConversationStep,
 } from "@energy-bot/services";
 import { applianceIntroFlow } from "./appliances.flow.js";
-import { extractKwh, isTextMessage } from "../utils/message-validation.js";
+import {
+  extractKwh,
+  isStandaloneKwh,
+  isTextMessage,
+} from "../utils/message-validation.js";
+import { buildClosedMessage } from "../utils/monthly-plan.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 /**
@@ -42,6 +47,16 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
       return;
     }
 
+    // El proceso de este mes se cerró por agotar los intentos de foto: no se
+    // acepta ni el número a mano ni se gastan llamadas contestando preguntas.
+    if (conversationStateService.isConversationClosed(state)) {
+      await flowDynamic(buildClosedMessage());
+      return;
+    }
+
+    // Llegó el mes siguiente: el cierre expiró y le devolvemos los intentos.
+    await conversationStateService.reopenIfExpired(state);
+
     // Audios, stickers y demás: no hay nada que responder.
     if (!isTextMessage(ctx)) {
       return endFlow();
@@ -50,7 +65,10 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     // Mientras esperamos el recibo, un mensaje con un número es el consumo
     // promedio que le pedimos escribir porque la foto no alcanzó.
     if (state.currentStep === ConversationStep.AWAITING_RECEIPT) {
-      const kwh = extractKwh(ctx.body);
+      // Sólo tomamos el número si el mensaje *es* el número: una frase que
+      // casualmente trae cifras ("quién ganó el mundial 2022") es una
+      // pregunta para la IA, no el consumo promedio.
+      const kwh = isStandaloneKwh(ctx.body) ? extractKwh(ctx.body) : undefined;
 
       if (kwh !== undefined && receiptService.isPlausibleConsumption(kwh)) {
         await receiptService.registerManualAverageConsumption(user.id, kwh);

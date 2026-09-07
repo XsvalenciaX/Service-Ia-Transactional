@@ -23,6 +23,23 @@ const main = async () => {
   const { planFlow } = await import("./flows/plan.flow.js");
   const { restartFlow } = await import("./flows/restart.flow.js");
 
+  // Twilio manda el número del usuario en `From`. Si llega algo que no es un
+  // teléfono (una prueba manual del webhook, un callback de estado, un canal
+  // mal configurado), el envío de la respuesta falla con el error 21211 de
+  // Twilio. Loguearlo acá deja ver el valor exacto que llegó.
+  provider.on("message", (ctx: { from?: string; name?: string; body?: string }) => {
+    const numero = ctx.from ?? "";
+    const esTelefono = /^\d{7,15}$/.test(numero);
+
+    console.log(
+      `📩 [entrante] from=${JSON.stringify(numero)}${
+        esTelefono ? "" : "  ⚠️ NO parece un teléfono E.164"
+      } name=${JSON.stringify(ctx.name)} body=${JSON.stringify(
+        ctx.body?.slice(0, 60)
+      )}`
+    );
+  });
+
   const bot = await createBot({
     // restartFlow va primero: su keyword tiene que ganarle al WELCOME, que
     // atiende cualquier texto que no matchee otro flow.
@@ -42,6 +59,32 @@ const main = async () => {
     `🤖 Bot de ahorro energético corriendo. Webhook de Twilio: POST http://localhost:${port}/webhook`
   );
 };
+
+// BuilderBot manda las respuestas fuera del await de los flows, así que un
+// rechazo del proveedor (un número inválido, un corte de red con Twilio)
+// llega como unhandledRejection y, sin esto, tumba el proceso entero: una
+// sola conversación rota dejaría al bot caído para todos los demás.
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️ Error no capturado al procesar un mensaje:", reason);
+});
+
+process.on("uncaughtException", (error: NodeJS.ErrnoException) => {
+  // Un puerto ocupado no es un error del que se pueda seguir: el bot quedaría
+  // "vivo" pero sin webhook, que se ve igual que un bot que no responde.
+  // Mejor morir con un mensaje claro que fingir que arrancó.
+  if (error.code === "EADDRINUSE") {
+    const port = Number(process.env.PORT) || 3000;
+    console.error(
+      `\n❌ El puerto ${port} ya está ocupado por otro proceso.\n` +
+        `   Cerrá el bot que tengas corriendo y volvé a intentar.\n` +
+        `   Para encontrarlo:  netstat -ano | findstr :${port}\n` +
+        `   Para cerrarlo:     taskkill /PID <pid> /F\n`
+    );
+    process.exit(1);
+  }
+
+  console.error("⚠️ Excepción no capturada (el bot sigue corriendo):", error);
+});
 
 main().catch((error) => {
   console.error("Error al iniciar el bot:", error);

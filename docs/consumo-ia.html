@@ -273,6 +273,25 @@
     color: var(--ink);
   }
 
+  .notice {
+    margin: 0;
+    padding: 18px 34px;
+    background: var(--amber-soft);
+    border-bottom: 1px solid var(--rule);
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+  .notice b { color: var(--ink); font-weight: 600; }
+  .notice .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    display: block;
+    margin-bottom: 4px;
+  }
   .log {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-size: 12.5px;
@@ -329,9 +348,21 @@
     <div class="meta">
       Modelo <b>claude-haiku-4-5</b><br>
       Entrada <b>USD 1,00</b> / millón de tokens<br>
-      Salida <b>USD 5,00</b> / millón de tokens
+      Salida <b>USD 5,00</b> / millón de tokens<br>
+      <span style="color: var(--amber)">modelo dado de baja — ver aviso</span>
     </div>
   </header>
+
+  <p class="notice">
+    <span class="tag">Pendiente de volver a medir</span>
+    Estas cifras son de <b>claude-haiku-4-5</b>, el modelo que el bot usaba hasta el
+    5 de septiembre de 2026. Hoy corre con <b>gpt-5.6-luna</b> (USD 0,20 entrada /
+    1,20 salida por millón), y con los mismos tokens la conversación completa
+    proyecta <b>USD 0,0011</b> en vez de 0,0050 — unas <b>4.650</b> conversaciones
+    con los USD 5 de crédito en vez de 1.000. Es una proyección, no una medición:
+    OpenAI cuenta los tokens de la imagen con otra regla, así que el número real
+    sale de correr el flujo con recibos de verdad y leer el log <code>[ai]</code>.
+  </p>
 
   <section>
     <h2>Qué consume</h2>

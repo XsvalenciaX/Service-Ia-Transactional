@@ -40,8 +40,25 @@ export async function resetReceiptAttempts(
 ): Promise<ConversationState> {
   return prisma.conversationState.upsert({
     where: { userId },
-    update: { receiptAttempts: 0 },
+    // Reabre también la conversación: si se había cerrado por agotar los
+    // intentos, empezar de cero es justamente lo que la vuelve a habilitar.
+    update: { receiptAttempts: 0, closedAt: null },
     create: { userId },
+  });
+}
+
+/**
+ * Marca la conversación como cerrada por haber agotado los intentos de foto.
+ * Se guarda la fecha, no un booleano, porque el cierre dura sólo el mes
+ * calendario en curso: con la factura del mes siguiente vuelve a habilitarse.
+ */
+export async function closeConversation(
+  userId: string
+): Promise<ConversationState> {
+  return prisma.conversationState.upsert({
+    where: { userId },
+    update: { closedAt: new Date() },
+    create: { userId, closedAt: new Date() },
   });
 }
 

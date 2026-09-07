@@ -30,6 +30,28 @@ export function extractKwh(text: string): number | undefined {
   return Number.isFinite(valor) ? valor : undefined;
 }
 
+// Palabras que sí pueden acompañar al número sin que deje de ser el dato que
+// pedimos: "son 265 kwh", "mi consumo promedio es 300".
+const KWH_FILLER =
+  /\b(kwh|kw|kilovatios?|kilowatts?|promedio|consumo|mensual|mes|aprox|aproximadamente|es|son|de|del|el|la|mi|unos|como|mas|más|menos|o|y)\b/g;
+
+/**
+ * ¿El mensaje es *sólo* el número que pedimos, o una frase que casualmente
+ * trae uno? extractKwh() se queda con el primer número que encuentre, así que
+ * sin este filtro "quién ganó el mundial 2022" se guardaba como 2022 kWh de
+ * consumo promedio y el plan salía armado sobre un año.
+ */
+export function isStandaloneKwh(text: string): boolean {
+  const resto = text
+    .trim()
+    .toLowerCase()
+    .replace(/[\d.,]+/g, " ")
+    .replace(KWH_FILLER, " ")
+    .replace(/[^a-záéíóúñ]/g, "");
+
+  return resto.length === 0;
+}
+
 const QUESTION_STARTERS =
   /^(qué|que|cuál|cual|cuánt|cuant|cómo|por qué|por que|para qué|para que|cuándo|dónde|donde|quién|quien|explicame|explícame|no entiendo|me explicás|me explicas)/;
 

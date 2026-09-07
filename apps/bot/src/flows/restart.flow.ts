@@ -1,7 +1,7 @@
 import { addKeyword } from "@builderbot/bot";
 import { conversationStateService, planService } from "@energy-bot/services";
 import { welcomeFlow } from "./welcome.flow.js";
-import { buildAlreadyDoneMessage } from "../utils/monthly-plan.js";
+import { buildAlreadyDoneMessage, buildClosedMessage } from "../utils/monthly-plan.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 export const RESTART_KEYWORDS = ["reiniciar", "reset", "empezar de nuevo"];
@@ -22,7 +22,16 @@ export function isRestartCommand(text: string): boolean {
 
 export const restartFlow = addKeyword(RESTART_KEYWORDS).addAction(
   async (ctx: FlowContext, { flowDynamic, gotoFlow }: FlowMethods) => {
-    const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+    const { user, state } = await conversationStateService.getOrCreateSession(
+      ctx.from
+    );
+
+    // El proceso de este mes se cerró por agotar los intentos de foto:
+    // "reiniciar" no puede saltarse el cierre, o no serviría de nada.
+    if (conversationStateService.isConversationClosed(state)) {
+      await flowDynamic(buildClosedMessage());
+      return;
+    }
 
     // El plan es mensual: si ya lo tiene, "reiniciar" no debe borrárselo.
     const { alreadyDoneThisMonth, generatedAt } =

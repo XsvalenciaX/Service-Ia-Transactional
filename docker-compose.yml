@@ -27,7 +27,8 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/energy_bot?schema=public
       AI_PROVIDER_API_KEY: ${AI_PROVIDER_API_KEY:-}
-      AI_MODEL: ${AI_MODEL:-claude-haiku-4-5}
+      AI_MODEL: ${AI_MODEL:-gpt-5.6-luna}
+      AI_REASONING_EFFORT: ${AI_REASONING_EFFORT:-none}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}

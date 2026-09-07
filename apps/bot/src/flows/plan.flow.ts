@@ -11,13 +11,21 @@ export const planFlow = addKeyword(["_planFlow_"]).addAction(
 
     // El modelo recibe el consumo extraído del recibo + los hábitos que
     // contestó el usuario (ver packages/services/src/plan/plan.service.ts).
-    const { content, personalized } = await planService.generateSavingsPlan(
-      user.id
+    const { content, personalized, targetKwh } =
+      await planService.generateSavingsPlan(user.id);
+
+    // Al usuario se le promete el 10%, aunque el plan que armó la IA esté
+    // diseñado para 15% (ver PLAN_REDUCTION_PERCENT): esa diferencia es el
+    // colchón para que la meta se cumpla aunque lo siga a medias.
+    await flowDynamic(
+      `✅ Listo, este es tu plan para bajar un *${planService.PROMISED_REDUCTION_PERCENT}%* tu consumo:\n\n${content.summary}`
     );
 
-    await flowDynamic(
-      `✅ Listo, este es tu plan para bajar un *${content.targetReductionPercent}%* tu consumo:\n\n${content.summary}`
-    );
+    if (targetKwh !== undefined) {
+      await flowDynamic(
+        `🎯 Buscando que sea *${targetKwh} kWh* o menos en la próxima factura.`
+      );
+    }
 
     const recomendaciones = content.recommendations
       .map((texto, i) => `${i + 1}. ${texto}`)

@@ -19,14 +19,14 @@ La IA (Anthropic / Claude) se usa en dos puntos, los dos dentro de
   fuera del guion: si son sobre su plan o sobre energía, las contesta con sus propios
   datos; si no tienen que ver, avisa que de eso no puede ayudar y reconduce.
 
-El modelo por defecto es `claude-haiku-4-5` (el más barato con visión); se cambia
+El modelo por defecto es `gpt-5.6-luna` (el más barato con visión); se cambia
 con `AI_MODEL` en el `.env`. Si la IA no está disponible, los dos servicios
 degradan en vez de cortar la conversación.
 
 ## Requisitos
 
 - Node.js 20+
-- Una API key de Anthropic en `AI_PROVIDER_API_KEY` (ver
+- Una API key de OpenAI en `AI_PROVIDER_API_KEY_OPENAI` (ver
   [Configurar la IA](#configurar-la-ia) más abajo)
 - pnpm (`npm i -g pnpm`; `corepack enable` sólo sirve hasta Node 24)
 - PostgreSQL corriendo localmente (o accesible por red) — o, más simple, Docker
@@ -102,20 +102,21 @@ dev` en tu máquina, comenta o borra el servicio `bot` de `docker-compose.yml` y
 
 ## Configurar la IA
 
-El bot usa **Claude (Anthropic)** para dos cosas: leer la foto del recibo y armar
+El bot usa **GPT (OpenAI)** para dos cosas: leer la foto del recibo y armar
 el plan de ahorro. Hace falta una API key:
 
-1. Entrá a <https://console.anthropic.com> y creá una cuenta (o iniciá sesión).
+1. Entrá a <https://platform.openai.com> y creá una cuenta (o iniciá sesión).
 2. Cargá saldo en **Billing** — la API se paga por uso y no trae crédito gratis.
-   Con el mínimo (USD 5) alcanza para miles de recibos: con `claude-haiku-4-5`,
-   leer un recibo y generar un plan cuesta del orden de **USD 0,002** en total.
-3. Andá a **Settings → API Keys**, tocá *Create Key*, copiala (se muestra una
-   sola vez; empieza con `sk-ant-`).
+   Con el mínimo (USD 5) alcanza para miles de recibos: con `gpt-5.6-luna`,
+   leer un recibo y generar un plan cuesta del orden de **USD 0,001** en total.
+3. Andá a **API keys**, tocá *Create new secret key*, copiala (se muestra una
+   sola vez; empieza con `sk-`).
 4. Pegala en el `.env` de la raíz:
 
    ```bash
-   AI_PROVIDER_API_KEY=sk-ant-...
-   AI_MODEL=claude-haiku-4-5
+   AI_PROVIDER_API_KEY_OPENAI=sk-...
+   AI_MODEL=gpt-5.6-luna
+   AI_REASONING_EFFORT=none
    ```
 
 5. Reiniciá el bot o el simulador (la key se lee al arrancar).
@@ -125,19 +126,24 @@ el plan de ahorro. Hace falta una API key:
 `AI_MODEL` decide qué modelo se usa; todos leen imágenes. Precios por millón de
 tokens (entrada / salida):
 
-| Modelo             | Precio        | Cuándo usarlo                                    |
-| ------------------ | ------------- | ------------------------------------------------ |
-| `claude-haiku-4-5` | USD 1 / 5     | Por defecto. El más barato, alcanza para probar   |
-| `claude-sonnet-5`  | USD 2 / 10    | Si falla leyendo recibos borrosos o mal iluminados |
-| `claude-opus-5`    | USD 5 / 25    | Máxima precisión de lectura                       |
+| Modelo             | Precio          | Cuándo usarlo                                      |
+| ------------------ | --------------- | -------------------------------------------------- |
+| `gpt-5.6-luna`     | USD 0,20 / 1,20 | Por defecto. El más barato, alcanza para probar     |
+| `gpt-5.6-luna-pro` | USD 1,25 / 10   | Si falla leyendo recibos borrosos o mal iluminados  |
 
 Cambiar de modelo es sólo editar el `.env` y reiniciar: no hay que tocar código.
+
+Luna es un modelo de razonamiento y **los tokens que piensa se facturan como
+salida**, que es la parte cara. Por eso `AI_REASONING_EFFORT` viene en `none`:
+leer un recibo y redactar un plan son tareas de un solo paso. Subirlo a `low` o
+`medium` puede duplicar o triplicar el costo de cada llamada, así que sólo tiene
+sentido si la extracción falla con recibos reales.
 
 ### La key no se sube al repo
 
 `.env` está en `.gitignore`. Lo que se versiona es `.env.example`, que tiene la
 variable vacía. Si la key se filtra, revocala desde la misma pantalla de
-**API Keys** de la consola.
+**API keys** de la consola.
 
 ## Probar sin WhatsApp (simulador)
 

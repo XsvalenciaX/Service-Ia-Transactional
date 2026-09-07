@@ -18,6 +18,19 @@ export function buildAlreadyDoneMessage(generatedAt?: Date): string {
   );
 }
 
+/**
+ * El usuario agotó los intentos de foto sin que pudiéramos leerle el consumo.
+ * A partir de acá no se procesa nada más hasta el mes siguiente, así que el
+ * mensaje tiene que cerrar sin dejarlo esperando una respuesta.
+ */
+export function buildClosedMessage(): string {
+  return (
+    "⚠️ No logré procesar tu información después de varios intentos, así que " +
+    "por ahora no puedo armar tu plan.\n\n" +
+    `Volvamos a intentarlo en ${nextMonthName()}, cuando te llegue tu próxima factura. 📅`
+  );
+}
+
 function nextMonthName(): string {
   const siguiente = new Date();
   // Día 1 antes de sumar el mes: en un 31 de enero, sumarle un mes a la fecha

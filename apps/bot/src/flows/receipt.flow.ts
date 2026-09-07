@@ -6,12 +6,12 @@ import {
   ConversationStep,
 } from "@energy-bot/services";
 import { applianceIntroFlow } from "./appliances.flow.js";
-import { buildAlreadyDoneMessage } from "../utils/monthly-plan.js";
+import { buildAlreadyDoneMessage, buildClosedMessage } from "../utils/monthly-plan.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
-// A partir de este intento dejamos de pedir fotos y le pedimos derecho el
-// número: si tres veces no salió, es probable que su factura no lo muestre o
-// que la cámara no dé para más.
+// En este intento se cierra el proceso del mes: si tres veces no salió, es
+// probable que su factura no lo muestre o que la cámara no dé para más, y
+// seguir mandando fotos al modelo sólo gasta llamadas sin resolver nada.
 const MAX_INTENTOS_FOTO = 3;
 
 export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
@@ -19,6 +19,16 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
     const { user, state } = await conversationStateService.getOrCreateSession(
       ctx.from
     );
+
+    // El proceso de este mes ya se cerró por agotar los intentos: cortamos
+    // acá, antes de guardar la foto y de pagar la llamada al modelo.
+    if (conversationStateService.isConversationClosed(state)) {
+      await flowDynamic(buildClosedMessage());
+      return;
+    }
+
+    // Llegó el mes siguiente: el cierre expiró y le devolvemos los intentos.
+    await conversationStateService.reopenIfExpired(state);
 
     if (state.currentStep === ConversationStep.COMPLETED) {
       // Ya terminó el proceso alguna vez. Si el plan es de este mes se lo
@@ -64,58 +74,62 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
         user.id
       );
 
+      if (intentos >= MAX_INTENTOS_FOTO) {
+        await conversationStateService.closeConversation(user.id);
+        await flowDynamic(buildClosedMessage());
+        return;
+      }
+
       await flowDynamic(
         "⚠️ No logramos identificar el consumo, por favor digita el valor en kWh."
       );
 
       await flowDynamic(
-        intentos >= MAX_INTENTOS_FOTO
-          ? `${analysis.recommendation ?? "La imagen no parece una factura de energía."}\n\n` +
-              "Ya van varios intentos, así que necesito que me lo escribas: envíame *solo el número* de tu consumo promedio en kWh (por ejemplo: 265)."
-          : `${analysis.recommendation ?? "La imagen no parece una factura de energía."}\n\n` +
-              "También puedes enviarme otra foto, esta vez de la *factura de energía completa*."
+        `${analysis.recommendation ?? "La imagen no parece una factura de energía."}\n\n` +
+          "También puedes enviarme otra foto, esta vez de la *factura de energía completa*."
       );
       // Nos quedamos en AWAITING_RECEIPT: puede mandar otra foto o el número.
       return;
     }
 
-    // Repetirle lo que leímos le deja corregir de entrada si la IA se
-    // equivocó, en vez de descubrirlo recién en el plan final.
-    const consumo =
-      analysis.consumptionKwh !== undefined
-        ? `Leí un consumo de *${analysis.consumptionKwh} kWh*`
-        : "Pude leer tu recibo";
-    const monto =
-      analysis.amount !== undefined
-        ? ` por *${analysis.amount.toLocaleString("es-CO")} ${analysis.currency ?? ""}*`.trimEnd()
-        : "";
-
-    await flowDynamic(`📄 ${consumo}${monto}.`);
-
     // El promedio de los últimos meses suele estar en un recuadro aparte o en
     // el gráfico del historial, así que es lo primero que se pierde cuando la
     // foto sólo agarra la parte de arriba del recibo.
+    //
+    // Se valida antes de confirmarle nada: si acá le decíamos "leí un consumo
+    // de 98 kWh" y en el mensaje siguiente "no logramos identificar el
+    // consumo", el bot se contradecía solo.
     if (analysis.averageConsumptionKwh === undefined) {
       const intentos = await conversationStateService.registerReceiptAttempt(
         user.id
       );
 
-      await flowDynamic(
-        "⚠️ No logramos identificar el consumo, por favor digita el valor en kWh."
-      );
+      if (intentos >= MAX_INTENTOS_FOTO) {
+        await conversationStateService.closeConversation(user.id);
+        await flowDynamic(buildClosedMessage());
+        return;
+      }
 
+      // Lo que falta es el promedio, no el consumo del período: nombrarlo mal
+      // manda al usuario a buscar el número equivocado en su factura.
       await flowDynamic(
-        intentos >= MAX_INTENTOS_FOTO
-          ? "Me falta tu *consumo promedio* de los últimos meses. Escríbeme *solo el número* en kWh (por ejemplo: 265) y seguimos."
-          : "Me falta tu *consumo promedio* de los últimos meses, que lo necesito para calcular cuánto puedes bajar.\n\n" +
-              "Envíame otra foto donde se vea la *factura completa* — el recuadro o el gráfico del historial de consumo — o escríbeme el número directamente."
+        "⚠️ Me falta tu *consumo promedio* de los últimos meses, que es lo que necesito para calcular cuánto puedes bajar.\n\n" +
+          "Envíame otra foto donde se vea la *factura completa* — el recuadro o el gráfico del historial de consumo — o escríbeme el número directamente."
       );
       // Seguimos en AWAITING_RECEIPT: puede mandar otra foto o el número.
       return;
     }
 
+    // Repetirle lo que leímos le deja corregir de entrada si la IA se
+    // equivocó, en vez de descubrirlo recién en el plan final. Nunca se le
+    // menciona el monto: el bot habla de energía, no de plata.
+    const consumo =
+      analysis.consumptionKwh !== undefined
+        ? `📄 Leí un consumo de *${analysis.consumptionKwh} kWh* en el período facturado.\n\n`
+        : "📄 Pude leer tu recibo.\n\n";
+
     await flowDynamic(
-      `Tu promedio de los últimos meses es de *${analysis.averageConsumptionKwh} kWh*.`
+      `${consumo}Tu promedio de los últimos meses es de *${analysis.averageConsumptionKwh} kWh*.`
     );
 
     await flowDynamic(
