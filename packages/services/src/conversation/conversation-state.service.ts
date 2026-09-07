@@ -12,7 +12,7 @@ import {
 export { ConversationStep };
 
 export const MAX_RECEIPT_ATTEMPTS = 3;
-export const MIN_DAYS_BETWEEN_PLANS = 15;
+export const MIN_DAYS_BETWEEN_PLANS = 28;
 
 const MIN_MS_BETWEEN_PLANS = MIN_DAYS_BETWEEN_PLANS * 24 * 60 * 60 * 1000;
 
@@ -39,6 +39,14 @@ function isPlanCooldownOver(state: ConversationState): boolean {
     state.planReadyAt !== null &&
     Date.now() - state.planReadyAt.getTime() >= MIN_MS_BETWEEN_PLANS
   );
+}
+
+/** Fecha desde la que se puede generar un plan nuevo, o null si todavía no hay uno. */
+export function nextPlanAvailableAt(state: ConversationState): Date | null {
+  if (state.planReadyAt === null) {
+    return null;
+  }
+  return new Date(state.planReadyAt.getTime() + MIN_MS_BETWEEN_PLANS);
 }
 
 /**

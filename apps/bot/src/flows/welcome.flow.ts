@@ -66,6 +66,17 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
       return;
     }
 
-    await flowDynamic("Plan completado. Para crear un plan nuevo, espera unos días");
+    const availableAt = conversationStateService.nextPlanAvailableAt(state);
+    const availableAtLabel = availableAt
+      ? new Intl.DateTimeFormat("es", { day: "numeric", month: "long", year: "numeric" }).format(
+          availableAt
+        )
+      : null;
+
+    await flowDynamic(
+      availableAtLabel
+        ? `Plan completado, podrás generar un plan nuevo a partir del *${availableAtLabel}*.`
+        : "Plan completado. Para crear un plan nuevo deberás esperar unos días."
+    );
   }
 );
