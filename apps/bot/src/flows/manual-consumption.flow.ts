@@ -29,10 +29,19 @@ export const manualConsumptionFlow = addKeyword(["_ask_manual_consumption_"]).ad
     const body = isTextMessage(ctx) ? ctx.body.trim() : "";
     const { user } = await conversationStateService.getOrCreateSession(ctx.from);
 
-    if (!isTextMessage(ctx) || !CONSUMPTION_PATTERN.test(body)) {
+    const formatoOk = isTextMessage(ctx) && CONSUMPTION_PATTERN.test(body);
+    // El formato solo no alcanza: el error más común acá es escribir el total a
+    // pagar en vez de los kWh ("581149"), y eso pasa el patrón sin problema.
+    // Guardarlo dejaría el plan armado sobre un promedio absurdo.
+    const rangoOk = formatoOk && receiptService.isPlausibleConsumption(Number(body));
+
+    if (!formatoOk || !rangoOk) {
       await conversationStateService.lockUntilTomorrow(user.id);
       await flowDynamic(
-        "😕 Esa no es una respuesta válida. Vas a tener que esperar hasta *mañana* para volver a intentarlo."
+        formatoOk
+          ? `😕 Ese valor no parece un consumo mensual: normalmente está entre ${receiptService.MIN_CONSUMPTION_KWH} y ${receiptService.MAX_CONSUMPTION_KWH} kWh. ` +
+              "Fijate que sea el consumo en *kWh*, no el total a pagar. Vas a tener que esperar hasta *mañana* para volver a intentarlo."
+          : "😕 Esa no es una respuesta válida. Vas a tener que esperar hasta *mañana* para volver a intentarlo."
       );
       return;
     }

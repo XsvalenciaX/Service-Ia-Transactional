@@ -51,10 +51,18 @@ Reglas:
 - No inventes valores: si un dato no se ve en la imagen, omítelo en vez de estimarlo.
 - Los consumos van como número, sin separadores de miles ni unidades.
 - No extraigas montos, precios ni tarifas: no los pedimos y no se usan para nada.
-- "averageConsumptionKwh" es el promedio que la factura ya trae impreso (suele
-  aparecer como "consumo promedio", "promedio últimos 6 meses", o en el gráfico
-  del historial de consumo). Nunca lo calcules tú ni lo deduzcas del consumo del
-  período: si ese número no está impreso en la imagen, omite el campo.`;
+- "averageConsumptionKwh" es el promedio que la factura ya trae impreso. Casi
+  siempre está en el gráfico de barras del historial: el recuadro se titula algo
+  como "Histórico de consumos (kWh) y promedio", y la ÚLTIMA barra —separada de
+  las demás y rotulada "PROM"— es ese promedio. Al pie del gráfico suele estar la
+  aclaración "PROMEDIO DE LOS ÚLTIMOS 6 MESES = PROM". Mira ese número sobre la
+  barra PROM, no el de la barra "Actual", que es el consumo del período.
+- Ojo con las facturas agrupadas: la misma hoja puede traer un gráfico de historial
+  por cada servicio (acueducto, alcantarillado, gas), medidos en m³. Usa SIEMPRE el
+  gráfico cuyo título dice kWh, que es el de energía; nunca uno en m³.
+- También puede venir como texto suelto ("consumo promedio", "promedio últimos 6
+  meses"). Nunca lo calcules tú ni lo deduzcas del consumo del período: si ese
+  número no está impreso en la imagen, omite el campo.`;
 
 const ANALYSIS_PROMPT = `Analiza esta imagen de un recibo de energía eléctrica.
 
