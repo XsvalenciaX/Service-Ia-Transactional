@@ -3,7 +3,6 @@ import {
   applianceRepository,
   planRepository,
   PlanStatus,
-  ApplianceType,
   type SavingsPlan,
   type Receipt,
   type Appliance,
@@ -14,6 +13,7 @@ import {
   type ImageMediaType,
 } from "../shared/image.js";
 import { AiError, requestJson } from "../shared/ai.js";
+import { getApplianceQuestionText } from "../appliances/appliance-questions.js";
 
 /**
  * Lo que se le pide a la IA que ataque. El plan se diseña para 15% aunque al
@@ -78,19 +78,6 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
   ni markdown. Nada de insultos ni de modismos de otros países.
 - Responde únicamente con el JSON pedido.`;
 
-// Reflejan las preguntas que el bot hace de verdad (ver
-// apps/bot/src/flows/appliance-questions.ts) porque es el texto que ve el
-// modelo al armar el plan. Van en "tú" como el resto de los prompts: con los
-// prompts escritos en voseo, el modelo llegó a contestarle "boludo" a un
-// usuario que mandó la foto equivocada.
-const APPLIANCE_QUESTIONS: Record<ApplianceType, string> = {
-  [ApplianceType.AIRE]:
-    "¿Tienes aire acondicionado? ¿Cuántas veces a la semana lo usas y cuántas horas al día en promedio?",
-  [ApplianceType.PLANCHA]: "¿Tienes plancha? ¿Cuántas veces a la semana la usas?",
-  [ApplianceType.HORNO_AIRFRYER]:
-    "¿Tienes horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces a la semana lo usas?",
-};
-
 function buildApplianceQaText(appliances: Appliance[]): string {
   if (appliances.length === 0) {
     return "El usuario no reportó tener ninguno de los electrodomésticos preguntados.";
@@ -98,7 +85,7 @@ function buildApplianceQaText(appliances: Appliance[]): string {
 
   return appliances
     .map((appliance) => {
-      const question = APPLIANCE_QUESTIONS[appliance.type];
+      const question = getApplianceQuestionText(appliance.type);
       const detail =
         appliance.hoursPerDay !== null && appliance.hoursPerDay !== undefined
           ? `${appliance.hoursPerDay} horas/día`

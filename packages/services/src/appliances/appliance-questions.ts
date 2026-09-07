@@ -1,11 +1,14 @@
-import { appliancesService, ConversationStep } from "@energy-bot/services";
+import { ConversationStep } from "../conversation/conversation-state.service.js";
+import { ApplianceType } from "./appliances.service.js";
 
 /**
- * Configuración declarativa del cuestionario de electrodomésticos. No hay
- * lógica de flujo acá: `appliances.flow.ts` arma los flows de BuilderBot
- * recorriendo `APPLIANCE_QUESTIONS`. Agregar un electrodoméstico nuevo es
- * agregar un objeto a ese array (y su valor en `ApplianceType`/
- * `ConversationStep` si necesita un paso propio).
+ * Configuración declarativa del cuestionario de electrodomésticos: única
+ * fuente de verdad tanto para el flow de WhatsApp
+ * (apps/bot/src/flows/appliances.flow.ts) como para el texto que ve la IA
+ * al armar el plan (../plan/plan.service.ts). Agregar un electrodoméstico
+ * nuevo es agregar un objeto a `APPLIANCE_QUESTIONS` (y su valor en
+ * `ApplianceType`/`ConversationStep` si necesita un paso propio) — no hay
+ * que tocar nada más para que ambos lados se enteren.
  */
 
 export interface Validation {
@@ -46,7 +49,7 @@ export interface ListQuestion {
 
 export interface ApplianceQuestion {
   key: string;
-  applianceType: appliancesService.ApplianceType;
+  applianceType: ApplianceType;
   step: ConversationStep;
   gate: {
     template: TemplatePrompt;
@@ -55,6 +58,14 @@ export interface ApplianceQuestion {
     feedback: string;
   };
   followUp: TextQuestion | ListQuestion;
+  /**
+   * Resumen en una sola frase de gate + followUp: es el texto que lee la IA
+   * al armar el plan (ver `getApplianceQuestionText`), no lo que ve el
+   * usuario por WhatsApp. Va en "tú" como el resto de los prompts a la IA:
+   * con los prompts en voseo, el modelo llegó a contestarle "boludo" a un
+   * usuario que mandó la foto equivocada.
+   */
+  aiQuestionText: string;
 }
 
 const YES_NO_CONTENT_SID = "HX5b31695abeec4ae5857f8c925b213c9d";
@@ -81,7 +92,7 @@ const NUMERIC_FEEDBACK = "Necesito que me respondas con un *número*, por ejempl
 export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
   {
     key: "aire",
-    applianceType: appliancesService.ApplianceType.AIRE,
+    applianceType: ApplianceType.AIRE,
     step: ConversationStep.ASKING_AIRE,
     gate: yesNoGate("aire acondicionado", "❄️ ¿Tienes *aire acondicionado* en tu hogar?"),
     followUp: {
@@ -118,10 +129,12 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
         field: "hoursPerDay",
       },
     },
+    aiQuestionText:
+      "¿Tienes aire acondicionado? ¿Cuántas veces a la semana lo usas y cuántas horas al día en promedio?",
   },
   {
     key: "plancha",
-    applianceType: appliancesService.ApplianceType.PLANCHA,
+    applianceType: ApplianceType.PLANCHA,
     step: ConversationStep.ASKING_PLANCHA,
     gate: yesNoGate("plancha de ropa", "👕 ¿Tienes *plancha de ropa* en tu hogar?"),
     followUp: {
@@ -130,10 +143,11 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
       validation: { pattern: /^\d{1,2}$/, feedback: NUMERIC_FEEDBACK },
       field: "frequencyPerWeek",
     },
+    aiQuestionText: "¿Tienes plancha? ¿Cuántas veces a la semana la usas?",
   },
   {
     key: "horno",
-    applianceType: appliancesService.ApplianceType.HORNO_AIRFRYER,
+    applianceType: ApplianceType.HORNO_AIRFRYER,
     step: ConversationStep.ASKING_HORNO,
     gate: yesNoGate(
       "horno eléctrico o freidora de aire",
@@ -145,5 +159,21 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
       validation: { pattern: /^\d{1,2}$/, feedback: NUMERIC_FEEDBACK },
       field: "frequencyPerWeek",
     },
+    aiQuestionText:
+      "¿Tienes horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces a la semana lo usas?",
   },
 ];
+
+/**
+ * Texto en lenguaje natural de la pregunta de un electrodoméstico, para el
+ * prompt que arma el plan con la IA (ver plan.service.ts). Lanza si `type`
+ * no tiene entrada en `APPLIANCE_QUESTIONS`, lo que sólo puede pasar si
+ * `ApplianceType` se extiende sin agregar su objeto acá.
+ */
+export function getApplianceQuestionText(type: ApplianceType): string {
+  const question = APPLIANCE_QUESTIONS.find((q) => q.applianceType === type);
+  if (!question) {
+    throw new Error(`No hay pregunta configurada para el tipo de electrodoméstico "${type}"`);
+  }
+  return question.aiQuestionText;
+}

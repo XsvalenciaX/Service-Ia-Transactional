@@ -1,4 +1,4 @@
-import type { TemplatePrompt } from "../flows/appliance-questions.js";
+import type { TemplatePrompt } from "@energy-bot/services";
 import type { FlowMethods } from "../types/flow.js";
 
 // Mismo formato que usa @builderbot/provider-twilio internamente

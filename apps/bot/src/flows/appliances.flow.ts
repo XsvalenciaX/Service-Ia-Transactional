@@ -3,16 +3,14 @@ import {
   appliancesService,
   conversationStateService,
   ConversationStep,
+  APPLIANCE_QUESTIONS,
+  type ApplianceQuestion,
+  type TextQuestion,
 } from "@energy-bot/services";
 import { planFlow } from "./plan.flow.js";
 import { isRestartCommand, restartFlow } from "./restart.flow.js";
 import { isTextMessage } from "../utils/message-validation.js";
 import { sendTemplate } from "../provider/send-template.js";
-import {
-  APPLIANCE_QUESTIONS,
-  type ApplianceQuestion,
-  type TextQuestion,
-} from "./appliance-questions.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 import type { TFlow } from "@builderbot/bot/dist/types.js";
 import type { ApplianceType } from "@energy-bot/services";
