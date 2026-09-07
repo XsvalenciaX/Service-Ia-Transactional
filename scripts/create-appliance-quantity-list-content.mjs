@@ -5,15 +5,10 @@ import { dirname, join } from "node:path";
 /**
  * Crea el Content de Twilio compartido "ask_appliance_quantity"
  * (twilio/list-picker) que usan todos los electrodomésticos que preguntan
- * "cuántos tenés" (aire, tv, ventilador, y los que se agreguen después) --
- * mismo patrón que YES_NO_CONTENT_SID en appliance-questions.ts: un solo
- * template parametrizado con {{1}} en vez de uno por electrodoméstico.
- *
- * El aire ya tenía su propio template dedicado (HX95ae8d68cb524ed16a648f8eb9d987a6,
- * "¿Cuántos aires acondicionados tiene la vivienda?", sin variable) creado
- * antes de este script -- se deja como está porque ya puede estar aprobado
- * y en uso; este Content nuevo es sólo para los electrodomésticos que se
- * agreguen de ahora en más.
+ * "cuántos tienes" (aire, tv, ventilador, y los que se agreguen después) --
+ * un solo template parametrizado con {{1}} en vez de uno por
+ * electrodoméstico. El aire tenía antes su propio template dedicado
+ * (ask_air_conditioners_number), migrado a este compartido y borrado.
  *
  * Uso: node scripts/create-appliance-quantity-list-content.mjs [--dry-run]
  */

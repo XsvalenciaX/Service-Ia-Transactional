@@ -82,9 +82,7 @@ function frequencyFollowUp(prompt: string): TextQuestion {
 
 // Template compartido de lista (scripts/create-appliance-quantity-list-content.mjs):
 // "¿Cuántos {{1}} tiene la vivienda?", parametrizado en vez de un Content
-// por electrodoméstico. El aire es la excepción: usa su propio template
-// dedicado, creado antes de que existiera este compartido
-// (HX95ae8d68cb524ed16a648f8eb9d987a6).
+// por electrodoméstico (aire, tv, ventilador y los que se agreguen).
 const APPLIANCE_QUANTITY_CONTENT_SID = "HXfd6c127d25adf2a98b60008a98e22178";
 
 /**
@@ -133,40 +131,10 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
     key: "aire",
     applianceType: ApplianceType.AIRE,
     step: ConversationStep.ASKING_AIRE,
-    followUp: {
-      kind: "list",
-      template: {
-        contentSid: "HX95ae8d68cb524ed16a648f8eb9d987a6",
-        fallbackText: "¿Cuántos aires acondicionados tiene la vivienda?",
-        fallbackOptions: ["1", "2", "3", "4", "5", "6", "7 o más"],
-      },
-      validation: {
-        pattern: /^[1-6]$/,
-        feedback: 'Selecciona una opción de la lista: un número del 1 al 6, o "7 o más" 🙏',
-      },
-      overflow: {
-        // El item "7 o más" de la lista de Twilio (HX95ae8d68cb524ed16a648f8eb9d987a6)
-        // llega acá como body "7" — Twilio manda el id del item seleccionado,
-        // no su texto ("7 o más"), así que el id ("7") es lo único confiable
-        // para detectar esa opción. También matchea "7 o más"/números >=7
-        // por si el usuario los escribe a mano en vez de tocar la lista.
-        pattern: /^(7\s*o\s*m[aá]s|[7-9]|[1-9]\d+)$/i,
-        prompt: "¿Cuántos exactamente?",
-        validation: {
-          pattern: /^([7-9]|[1-9]\d+)$/,
-          feedback: "Necesito un número igual o mayor a 7, por ejemplo: 8",
-        },
-      },
-      then: {
-        kind: "text",
-        prompt: "¿Cuántas horas al día lo usas en promedio?",
-        validation: {
-          pattern: /^([1-9]|1\d|2[0-4])$/,
-          feedback: "Necesito el número de horas, entre 1 y 24, por ejemplo: 6",
-        },
-        field: "hoursPerDay",
-      },
-    },
+    followUp: quantityAndHoursFollowUp({
+      pluralLabel: "aires acondicionados",
+      fallbackText: "¿Cuántos aires acondicionados tiene la vivienda?",
+    }),
     aiQuestionText:
       "¿Tienes aire acondicionado? ¿Cuántas veces a la semana lo usas y cuántas horas al día en promedio?",
   },
