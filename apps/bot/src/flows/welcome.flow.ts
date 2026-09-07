@@ -66,6 +66,6 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
       return;
     }
 
-    await flowDynamic("No entendí ese mensaje. 🤖");
+    await flowDynamic("Plan completado. Para crear un plan nuevo, espera unos días");
   }
 );

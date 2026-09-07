@@ -12,6 +12,8 @@
     "db:generate": "pnpm --filter @energy-bot/database db:generate",
     "db:migrate": "pnpm --filter @energy-bot/database db:migrate",
     "db:studio": "pnpm --filter @energy-bot/database db:studio",
+    "db:reset": "bash scripts/reset-db.sh",
+    "dev:tunnel": "bash scripts/dev-tunnel.sh",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down"
   },
