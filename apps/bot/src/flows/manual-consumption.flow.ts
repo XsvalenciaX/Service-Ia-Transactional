@@ -50,7 +50,10 @@ export const manualConsumptionFlow = addKeyword(["_ask_manual_consumption_"]).ad
     await flowDynamic(
       "👍 Listo, con ese dato sigo. Ahora te haré unas preguntas rápidas sobre tus electrodomésticos."
     );
-    await conversationStateService.advanceStep(user.id, ConversationStep.ASKING_AIRE);
+    await conversationStateService.advanceStep(
+      user.id,
+      ConversationStep.ASKING_APPLIANCE_SELECTION
+    );
     return gotoFlow(applianceIntroFlow);
   }
 );

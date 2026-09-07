@@ -45,7 +45,7 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     if (state.currentStep === ConversationStep.WELCOME) {
 
       await flowDynamic(
-          "¡Hola! 👋 Soy tu asistente de ahorro energético para tu hogar o comercio. Te voy a ayudar a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
+          "¡Hola! 👋 Soy tu asistente de ahorro energético para tu hogar. Te voy a ayudar a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
         );
 
       await flowDynamic(

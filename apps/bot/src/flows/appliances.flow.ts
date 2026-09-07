@@ -9,36 +9,70 @@ import {
 } from "@energy-bot/services";
 import { planFlow } from "./plan.flow.js";
 import { isRestartCommand, restartFlow } from "./restart.flow.js";
-import { isTextMessage } from "../utils/message-validation.js";
+import { isTextMessage, readInteractiveData } from "../utils/message-validation.js";
 import { sendTemplate } from "../provider/send-template.js";
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 import type { TFlow } from "@builderbot/bot/dist/types.js";
 import type { ApplianceType } from "@energy-bot/services";
 
 // Clave de state (BuilderBot, en memoria por número — no es la Postgres de
-// @energy-bot/database) para cargar la frecuencia del aire de un paso al
+// @energy-bot/database) para cargar la frecuencia/cantidad de un paso al
 // siguiente, hasta que la pregunta de horas la guarda junto con ella en un
-// solo Appliance.
+// solo Appliance (sólo lo usan los followUp tipo "list", como el del aire).
 const PENDING_FREQUENCY_KEY = "pendingApplianceFrequency";
+
+// Cola de `key`s (de APPLIANCE_QUESTIONS) que el usuario marcó en
+// "appliance_selection" y todavía no contestó su followUp. El primero de
+// la lista es siempre el que está activo; cada followUp, al terminar, la
+// achica y salta al siguiente (ver advanceToNextAppliance).
+const PENDING_APPLIANCE_KEYS = "pendingApplianceKeys";
+
+const APPLIANCE_SELECTION_CONTENT_SID = "HXf2c39fd1d39ecc89cadf8ee39391f61f";
+
+const questionsByKey = new Map(APPLIANCE_QUESTIONS.map((q) => [q.key, q]));
+
+/**
+ * Después de guardar la respuesta de un electrodoméstico, saca el primero
+ * de la cola de pendientes (el que se acaba de contestar) y salta al
+ * followUp del que quedó primero. Vacía la cola -> ya se preguntó todo lo
+ * que el usuario marcó, sigue a planFlow.
+ */
+async function advanceToNextAppliance(
+  userId: string,
+  state: FlowMethods["state"],
+  gotoFlow: FlowMethods["gotoFlow"]
+) {
+  const remaining = (state.get<string[]>(PENDING_APPLIANCE_KEYS) ?? []).slice(1);
+  await state.update({ [PENDING_APPLIANCE_KEYS]: remaining });
+
+  const nextKey = remaining[0];
+  if (!nextKey) {
+    await conversationStateService.advanceStep(userId, ConversationStep.COMPLETED);
+    return gotoFlow(planFlow);
+  }
+
+  const nextQuestion = questionsByKey.get(nextKey);
+  const nextFlow = followUpFlowByKey.get(nextKey);
+  await conversationStateService.advanceStep(userId, nextQuestion!.step);
+  return gotoFlow(nextFlow!);
+}
 
 /**
  * Pregunta de texto libre validada contra `question.validation.pattern`
  * (p.ej. sólo números). Mientras no matchee, se repite el feedback y la
  * pregunta sin avanzar y sin pasar por la IA — eso sólo pasa al final del
  * cuestionario, en el catch-all de welcome.flow.ts. Guarda un solo campo y
- * avanza al siguiente paso.
+ * sigue con el próximo electrodoméstico pendiente.
  */
 function buildTextQuestionFlow(options: {
   triggerKeyword: string;
   question: TextQuestion;
   applianceType: ApplianceType;
-  nextStep: ConversationStep;
-  next: TFlow;
 }): TFlow {
   return addKeyword([options.triggerKeyword]).addAnswer(
     options.question.prompt,
     { capture: true },
-    async (ctx: FlowContext, { gotoFlow, fallBack }: FlowMethods) => {
+    async (ctx: FlowContext, { gotoFlow, fallBack, state }: FlowMethods) => {
       if (isRestartCommand(ctx.body)) {
         return gotoFlow(restartFlow);
       }
@@ -52,23 +86,21 @@ function buildTextQuestionFlow(options: {
       await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
         [options.question.field]: Number(body),
       });
-      await conversationStateService.advanceStep(user.id, options.nextStep);
-      return gotoFlow(options.next);
+      return advanceToNextAppliance(user.id, state, gotoFlow);
     }
   );
 }
 
 /**
- * Última pregunta de la cadena lista→horas del aire: guarda la frecuencia
- * que quedó pendiente en `state` (elegida en la lista o en el overflow)
- * junto con esta respuesta, en un solo `Appliance`, y recién ahí avanza.
+ * Última pregunta de la cadena lista→horas (aire, tv, ventilador): guarda
+ * la cantidad que quedó pendiente en `state` (elegida en la lista o en el
+ * overflow) junto con esta respuesta, en un solo `Appliance`, y recién ahí
+ * sigue con el próximo electrodoméstico pendiente.
  */
 function buildThenQuestionFlow(options: {
   triggerKeyword: string;
   question: TextQuestion;
   applianceType: ApplianceType;
-  nextStep: ConversationStep;
-  next: TFlow;
 }): TFlow {
   return addKeyword([options.triggerKeyword]).addAnswer(
     options.question.prompt,
@@ -89,8 +121,7 @@ function buildThenQuestionFlow(options: {
         frequencyPerWeek,
         [options.question.field]: Number(body),
       });
-      await conversationStateService.advanceStep(user.id, options.nextStep);
-      return gotoFlow(options.next);
+      return advanceToNextAppliance(user.id, state, gotoFlow);
     }
   );
 }
@@ -125,10 +156,10 @@ function buildOverflowFlow(options: {
 }
 
 /**
- * Pregunta con lista de Twilio (sólo el aire). Elegir 1-6 deja
- * esa frecuencia pendiente en `state` y sigue a la pregunta de horas;
- * elegir "7 o más" pasa al overflow, que pide el número exacto. Cualquier
- * otra respuesta reenvía la lista + el feedback
+ * Pregunta con lista de Twilio (aire, tv, ventilador). Elegir 1-6 deja esa
+ * cantidad pendiente en `state` y sigue a la pregunta de horas; elegir "7
+ * o más" pasa al overflow, que pide el número exacto. Cualquier otra
+ * respuesta reenvía la lista + el feedback.
  */
 function buildListQuestionFlow(options: {
   triggerKeyword: string;
@@ -164,123 +195,156 @@ function buildListQuestionFlow(options: {
     );
 }
 
-/**
- * Pregunta sí/no con plantilla de Twilio. "No" salta la pregunta de
- * frecuencia/uso y no guarda ningún `Appliance`; "Sí" pasa al follow-up.
- * Cualquier otra respuesta repite la plantilla + el feedback
- */
-function buildGateFlow(options: {
-  triggerKeyword: string;
-  gate: ApplianceQuestion["gate"];
-  nextStep: ConversationStep;
-  next: TFlow;
-  followUpFlow: TFlow;
-}): TFlow {
-  return addKeyword([options.triggerKeyword])
-    .addAction(async (ctx: FlowContext, { provider }: FlowMethods) => {
-      await sendTemplate(provider, ctx.from, options.gate.template);
-    })
-    .addAction(
-      { capture: true },
-      async (ctx: FlowContext, { gotoFlow, fallBack, provider }: FlowMethods) => {
-        if (isRestartCommand(ctx.body)) {
-          return gotoFlow(restartFlow);
-        }
+// Se arma un followUp por cada entrada de APPLIANCE_QUESTIONS (ya no hay
+// cadena de dependencia entre ellos como con el viejo gate por aparato: el
+// orden en que se preguntan ahora lo decide la selección del usuario en
+// "appliance_selection", no la posición en este array).
+const followUpFlowByKey = new Map<string, TFlow>();
+const followUpFlows: TFlow[] = [];
 
-        const body = isTextMessage(ctx) ? ctx.body.trim() : "";
-
-        if (isTextMessage(ctx) && options.gate.no.test(body)) {
-          const { user } = await conversationStateService.getOrCreateSession(ctx.from);
-          await conversationStateService.advanceStep(user.id, options.nextStep);
-          return gotoFlow(options.next);
-        }
-
-        if (isTextMessage(ctx) && options.gate.yes.test(body)) {
-          return gotoFlow(options.followUpFlow);
-        }
-
-        await sendTemplate(provider, ctx.from, options.gate.template);
-        return fallBack(options.gate.feedback);
-      }
-    );
-}
-
-interface BuiltAppliance {
-  gateFlow: TFlow;
-  flows: TFlow[];
-}
-
-// Se construyen en orden inverso de dependencia: cada paso necesita conocer
-// el flow al que saltar (y el ConversationStep al que avanzar) cuando
-// termina o cuando la respuesta es "No". `built[0]` es siempre el resultado
-// de la pregunta siguiente en APPLIANCE_QUESTIONS (o vacío para la última).
-const built: BuiltAppliance[] = [];
-
-for (let i = APPLIANCE_QUESTIONS.length - 1; i >= 0; i--) {
-  const question = APPLIANCE_QUESTIONS[i];
-  const nextStep = APPLIANCE_QUESTIONS[i + 1]?.step ?? ConversationStep.COMPLETED;
-  const nextFlow = built[0]?.gateFlow ?? planFlow;
-
+for (const question of APPLIANCE_QUESTIONS) {
   let followUpFlow: TFlow;
-  const extraFlows: TFlow[] = [];
 
   if (question.followUp.kind === "text") {
     followUpFlow = buildTextQuestionFlow({
       triggerKeyword: `_ask_${question.key}_followup_`,
       question: question.followUp,
       applianceType: question.applianceType,
-      nextStep,
-      next: nextFlow,
     });
+    followUpFlows.push(followUpFlow);
   } else {
     const thenFlow = buildThenQuestionFlow({
       triggerKeyword: `_ask_${question.key}_then_`,
       question: question.followUp.then,
       applianceType: question.applianceType,
-      nextStep,
-      next: nextFlow,
     });
-    extraFlows.push(thenFlow);
-
     const overflowFlow = buildOverflowFlow({
       triggerKeyword: `_ask_${question.key}_overflow_`,
       overflow: question.followUp.overflow,
       thenFlow,
     });
-    extraFlows.push(overflowFlow);
-
     followUpFlow = buildListQuestionFlow({
       triggerKeyword: `_ask_${question.key}_followup_`,
       question: question.followUp,
       overflowFlow,
       thenFlow,
     });
+    followUpFlows.push(followUpFlow, overflowFlow, thenFlow);
   }
 
-  const gateFlow = buildGateFlow({
-    triggerKeyword: `_ask_${question.key}_`,
-    gate: question.gate,
-    nextStep,
-    next: nextFlow,
-    followUpFlow,
-  });
-
-  built.unshift({ gateFlow, flows: [gateFlow, followUpFlow, ...extraFlows] });
+  followUpFlowByKey.set(question.key, followUpFlow);
 }
 
+/**
+ * De InteractiveData (respuesta real de "appliance_selection") saca los
+ * `id` marcados, sin importar en qué página estén, y los devuelve en el
+ * orden canónico de APPLIANCE_QUESTIONS. Forma confirmada contra un
+ * webhook real:
+ *
+ * { "pages": [
+ *     { "pageId": "climatizacion", "items": [{ "label": "climatizacion", "value": ["aire"] }] },
+ *     { "pageId": "cuidado_personal", "items": null }
+ * ] }
+ *
+ * `items` es `null` cuando no se marcó nada en esa página. `label` en cada
+ * item es en realidad el `name` del componente (no el texto de la
+ * pregunta) -- no se usa para nada, sólo `value` importa acá.
+ */
+function parseSelectedKeysFromInteractiveData(data: Record<string, unknown>): string[] {
+  const selected = new Set<string>();
+  const pages = Array.isArray(data.pages) ? data.pages : [];
+
+  for (const page of pages) {
+    const items = Array.isArray((page as { items?: unknown })?.items)
+      ? (page as { items: unknown[] }).items
+      : [];
+
+    for (const item of items) {
+      const values = Array.isArray((item as { value?: unknown })?.value)
+        ? (item as { value: unknown[] }).value
+        : [];
+
+      for (const id of values) {
+        if (typeof id === "string" && questionsByKey.has(id)) {
+          selected.add(id);
+        }
+      }
+    }
+  }
+
+  return APPLIANCE_QUESTIONS.filter((q) => selected.has(q.key)).map((q) => q.key);
+}
+
+const SELECTION_FALLBACK_TEXT =
+  "Para continuar, elige de la lista qué electrodomésticos tienes en tu hogar.";
+
+/**
+ * Pantalla de selección múltiple de Twilio (appliance_selection, ver
+ * scripts/create-appliance-selection-content.mjs): reemplaza el viejo
+ * yes/no uno por electrodoméstico por una sola pregunta. Guarda la
+ * selección como cola en `state` y arranca el followUp del primero.
+ *
+ * Sólo se acepta la respuesta real del select (InteractiveData) -- si el
+ * usuario escribe texto en vez de tocar la lista (incluido "ninguno"), se
+ * le pide que use la lista y se le reenvía, sin intentar interpretar lo
+ * que escribió. Esto deja sin forma de probar este paso en el simulador
+ * (WebProvider no genera InteractiveData) hasta que se le agregue esa
+ * simulación.
+ */
+const applianceSelectionFlow = addKeyword(["_ask_appliance_selection_"])
+  .addAction(async (ctx: FlowContext, { provider }: FlowMethods) => {
+    await sendTemplate(provider, ctx.from, {
+      contentSid: APPLIANCE_SELECTION_CONTENT_SID,
+      fallbackText: SELECTION_FALLBACK_TEXT,
+    });
+  })
+  .addAction(
+    { capture: true },
+    async (ctx: FlowContext, { gotoFlow, fallBack, provider, state }: FlowMethods) => {
+      if (isTextMessage(ctx) && isRestartCommand(ctx.body)) {
+        return gotoFlow(restartFlow);
+      }
+
+      const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+      const interactiveData = readInteractiveData(ctx);
+
+      if (!interactiveData) {
+        await sendTemplate(provider, ctx.from, {
+          contentSid: APPLIANCE_SELECTION_CONTENT_SID,
+          fallbackText: SELECTION_FALLBACK_TEXT,
+        });
+        return fallBack("Necesito que elijas de la lista de arriba 📋");
+      }
+
+      const selectedKeys = parseSelectedKeysFromInteractiveData(interactiveData);
+
+      await state.update({ [PENDING_APPLIANCE_KEYS]: selectedKeys });
+
+      const firstKey = selectedKeys[0];
+      if (!firstKey) {
+        await conversationStateService.advanceStep(user.id, ConversationStep.COMPLETED);
+        return gotoFlow(planFlow);
+      }
+
+      const firstQuestion = questionsByKey.get(firstKey)!;
+      await conversationStateService.advanceStep(user.id, firstQuestion.step);
+      return gotoFlow(followUpFlowByKey.get(firstKey)!);
+    }
+  );
 
 export const applianceIntroFlow = addKeyword(["_applianceQuestionsFlow_"])
   .addAnswer(
-    "Antes de seguir: esta información sobre tus electrodomésticos la uso solo para " +
-      "estimar tu consumo y tu plan de ahorro. 📋"
+    "Esta información sobre tus electrodomésticos la uso solo para calcular tu plan " +
+      "de ahorro, nada más. 🔒"
   )
   .addAction(async (_ctx: FlowContext, { gotoFlow }: FlowMethods) => {
-    return gotoFlow(built[0].gateFlow);
+    return gotoFlow(applianceSelectionFlow);
   });
 
 // Todos los flows que este archivo define deben registrarse en createFlow()
 // (apps/bot/src/index.ts) para que gotoFlow pueda saltar entre ellos.
 export const applianceFlows: TFlow[] = [
   applianceIntroFlow,
-  ...built.flatMap((b) => b.flows),
+  applianceSelectionFlow,
+  ...followUpFlows,
 ];

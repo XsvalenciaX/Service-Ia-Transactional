@@ -28,18 +28,35 @@ const main = async () => {
   // teléfono (una prueba manual del webhook, un callback de estado, un canal
   // mal configurado), el envío de la respuesta falla con el error 21211 de
   // Twilio. Loguearlo acá deja ver el valor exacto que llegó.
-  provider.on("message", (ctx: { from?: string; name?: string; body?: string }) => {
-    const numero = ctx.from ?? "";
-    const esTelefono = /^\d{7,15}$/.test(numero);
+  provider.on(
+    "message",
+    (ctx: { from?: string; name?: string; body?: string; InteractiveData?: string }) => {
+      // BuilderBot descarta en silencio cualquier mensaje entrante con
+      // `body` vacío (@builderbot/bot, handleMsg: `if (!body) return;`) --
+      // nunca llega a ningún flow, sin loguear nada. Una respuesta de un
+      // twilio/flows (ver appliances.flow.ts, appliance_selection) no trae
+      // Body, sólo InteractiveData, así que sin este parche esa respuesta
+      // se pierde siempre. Este listener se registra antes que el interno
+      // de BuilderBot (createBot() más abajo) y ambos reciben el mismo
+      // objeto, así que mutarlo acá alcanza. El marcador usa el mismo
+      // prefijo "_event_" que ya trata isTextMessage() como "no es texto"
+      // (utils/message-validation.ts).
+      if (!ctx.body && ctx.InteractiveData) {
+        ctx.body = "_event_interactive_flow_";
+      }
 
-    console.log(
-      `📩 [entrante] from=${JSON.stringify(numero)}${
-        esTelefono ? "" : "  ⚠️ NO parece un teléfono E.164"
-      } name=${JSON.stringify(ctx.name)} body=${JSON.stringify(
-        ctx.body?.slice(0, 60)
-      )}`
-    );
-  });
+      const numero = ctx.from ?? "";
+      const esTelefono = /^\d{7,15}$/.test(numero);
+
+      console.log(
+        `📩 [entrante] from=${JSON.stringify(numero)}${
+          esTelefono ? "" : "  ⚠️ NO parece un teléfono E.164"
+        } name=${JSON.stringify(ctx.name)} body=${JSON.stringify(
+          ctx.body?.slice(0, 60)
+        )}`
+      );
+    }
+  );
 
   const bot = await createBot({
     // restartFlow va primero: su keyword tiene que ganarle al WELCOME, que

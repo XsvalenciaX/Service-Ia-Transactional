@@ -89,7 +89,7 @@ export const receiptFlow = addKeyword(EVENTS.MEDIA).addAction(
 
     await conversationStateService.advanceStep(
       user.id,
-      ConversationStep.ASKING_AIRE
+      ConversationStep.ASKING_APPLIANCE_SELECTION
     );
 
     return gotoFlow(applianceIntroFlow);
