@@ -88,7 +88,7 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
       kind: "list",
       template: {
         contentSid: "HX95ae8d68cb524ed16a648f8eb9d987a6",
-        fallbackText: "¿Cuántas veces a la semana usas el aire acondicionado?",
+        fallbackText: "¿Cuántos aires acondicionados tiene la vivienda?",
         fallbackOptions: ["1", "2", "3", "4", "5", "6", "7 o más"],
       },
       validation: {
@@ -96,8 +96,13 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
         feedback: 'Seleccioná una opción de la lista: un número del 1 al 6, o "7 o más" 🙏',
       },
       overflow: {
-        pattern: /^7\s*o\s*m[aá]s$/i,
-        prompt: "¿Cuántas veces exactamente?",
+        // El item "7 o más" de la lista de Twilio (HX95ae8d68cb524ed16a648f8eb9d987a6)
+        // llega acá como body "7" — Twilio manda el id del item seleccionado,
+        // no su texto ("7 o más"), así que el id ("7") es lo único confiable
+        // para detectar esa opción. También matchea "7 o más"/números >=7
+        // por si el usuario los escribe a mano en vez de tocar la lista.
+        pattern: /^(7\s*o\s*m[aá]s|[7-9]|[1-9]\d+)$/i,
+        prompt: "¿Cuántos exactamente?",
         validation: {
           pattern: /^([7-9]|[1-9]\d+)$/,
           feedback: "Necesito un número igual o mayor a 7, por ejemplo: 8",
