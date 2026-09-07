@@ -34,9 +34,18 @@ Manda la foto del recibo (bloque de imagen en base64) + `ANALYSIS_PROMPT`, con
 
 El system prompt le prohíbe inventar valores: si un dato no se ve en la foto, lo
 omite en vez de estimarlo. Para `averageConsumptionKwh` la regla es más estricta
-todavía — tiene que estar impreso en la factura (el recuadro de "promedio últimos
-6 meses" o el gráfico del historial), nunca calculado a partir del consumo del
-período.
+todavía — tiene que estar impreso en la factura, nunca calculado a partir del consumo
+del período.
+
+**Dónde está el promedio, en concreto.** Casi nunca viene como texto: está en la
+*última barra del gráfico del historial*, separada del resto y rotulada **PROM**
+(al pie, "PROMEDIO DE LOS ÚLTIMOS 6 MESES = PROM"). El prompt lo describe así de
+literal, y le aclara dos cosas que el modelo confundía:
+
+- La barra **PROM** no es la barra **Actual**: esa segunda es el consumo del período.
+- Una factura de EPM trae **un gráfico por servicio** — acueducto, alcantarillado y
+  gas en m³, energía en kWh. El prompt obliga a usar el gráfico cuyo título dice
+  **kWh** y a ignorar los de m³.
 
 **No se extrae ningún monto.** El prompt se lo prohíbe explícitamente y el JSON ni
 siquiera tiene el campo. El bot no habla de dinero en ninguna parte del flujo, así
@@ -49,16 +58,38 @@ cuando la energía eran 72.285 — y aun leyendo bien el renglón, seguía siend
 precio en pantalla. La migración `drop_receipt_amount` sacó `amount` y `currency`
 de las filas que ya estaban guardadas.
 
-**Si la foto no se puede leer**, `receipt.flow.ts` suma un intento en
-`ConversationState.receiptAttempts` y deja al usuario en `AWAITING_RECEIPT` para que
-mande otra. El tope son `MAX_RECEIPT_ATTEMPTS` (3).
+**Si la foto no se puede leer —o se lee pero sin el promedio—**, `receipt.flow.ts`
+suma un intento en `ConversationState.receiptAttempts` y deja al usuario en
+`AWAITING_RECEIPT` para que mande otra. El tope son `MAX_RECEIPT_ATTEMPTS` (3).
+
+**Cuando sí se lee**, el mensaje de confirmación muestra los *dos* números y dice
+cuál manda: "leí un consumo de 106 kWh en el período facturado y un consumo promedio
+de 112 kWh en los últimos meses. Tu plan lo armo sobre el promedio". Enseñar sólo el
+consumo del período —como quedó tras el merge— hacía parecer que el modelo había
+leído la barra equivocada del gráfico (la "Actual" en vez de la "PROM"), aunque el
+promedio estuviera bien extraído y guardado.
+
+Que **la falta del promedio cuente como intento fallido** no es un detalle: es el
+dato del que sale la meta (`calculateTargetKwh`). Sin esa validación el bot seguía de
+largo con un recibo a medias, hacía todas las preguntas y recién al final entregaba
+un plan sin objetivo en kWh. Y el mensaje de reintento nombra el problema real —le
+pide la foto del recuadro del histórico, no "una foto más clara"— porque el promedio
+se pierde por encuadre, no por nitidez: repetir el mismo encuadre no lo arregla.
 
 **Agotados los 3 intentos** el bot deja de pedir fotos —cada una cuesta una llamada
 al modelo— y pasa a `ASKING_MANUAL_CONSUMPTION`, donde le pide el número escrito:
 "escribime el consumo promedio en kWh". Lo atiende `manual-consumption.flow.ts`, que
-es deliberadamente estricto: **un solo intento**, validado contra `^d+(.d+)?$`, sin
-`fallBack`. Si no matchea, `lockUntilTomorrow()` lo manda a `LOCKED` y el bot no le
-contesta nada hasta la medianoche siguiente.
+es deliberadamente estricto: **un solo intento**, sin `fallBack`. Si no pasa la
+validación, `lockUntilTomorrow()` lo manda a `LOCKED` y el bot no le contesta nada
+hasta la medianoche siguiente.
+
+Se valida en dos pasos, y el segundo importa: además del formato numérico,
+`isPlausibleConsumption()` exige que el número caiga entre `MIN_CONSUMPTION_KWH` y
+`MAX_CONSUMPTION_KWH` (10–20.000). El error más común acá es escribir **el total a
+pagar** en vez de los kWh — un "581149" pasa cualquier validación de formato — y
+guardarlo dejaba el plan armado sobre un promedio absurdo, con una meta de 523.034
+kWh. El mensaje de rechazo dice explícitamente que sea el consumo en kWh y no el
+total a pagar.
 
 El desbloqueo no necesita que nadie lo dispare: `getOrCreateSession()` compara
 `lockedUntil` contra el reloj en cada mensaje y, si ya pasó, resetea a
