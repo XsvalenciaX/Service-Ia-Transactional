@@ -40,6 +40,7 @@ const main = async () => {
   const { conversationStateService } = await import("@energy-bot/services");
   const { welcomeFlow } = await import("../flows/welcome.flow.js");
   const { receiptFlow } = await import("../flows/receipt.flow.js");
+  const { manualConsumptionFlow } = await import("../flows/manual-consumption.flow.js");
   const { applianceFlows } = await import("../flows/appliances.flow.js");
   const { planFlow } = await import("../flows/plan.flow.js");
   const { restartFlow } = await import("../flows/restart.flow.js");
@@ -117,7 +118,14 @@ const main = async () => {
   // simulador no pelea por el puerto 3000 con `pnpm dev`.
   await createBot({
     // Mismo orden que en index.ts: restartFlow tiene que ganarle al WELCOME.
-    flow: createFlow([restartFlow, welcomeFlow, receiptFlow, ...applianceFlows, planFlow]),
+    flow: createFlow([
+      restartFlow,
+      welcomeFlow,
+      receiptFlow,
+      manualConsumptionFlow,
+      ...applianceFlows,
+      planFlow,
+    ]),
     provider,
     database: new MemoryDB(),
   });

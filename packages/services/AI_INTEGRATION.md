@@ -49,33 +49,29 @@ cuando la energía eran 72.285 — y aun leyendo bien el renglón, seguía siend
 precio en pantalla. La migración `drop_receipt_amount` sacó `amount` y `currency`
 de las filas que ya estaban guardadas.
 
-**Si la foto no es una factura o falta el promedio**, `receipt.flow.ts` responde
-"No logramos identificar el consumo, por favor digita el valor en kWh", suma un
-intento en `ConversationState.receiptAttempts` y deja al usuario en
-`AWAITING_RECEIPT`, ofreciendo las dos salidas: otra foto de la factura completa o
-el número a mano.
+**Si la foto no se puede leer**, `receipt.flow.ts` suma un intento en
+`ConversationState.receiptAttempts` y deja al usuario en `AWAITING_RECEIPT` para que
+mande otra. El tope son `MAX_RECEIPT_ATTEMPTS` (3).
 
-**Al tercer intento se cierra el proceso del mes** (`MAX_INTENTOS_FOTO`): se marca
-`ConversationState.closedAt` y a partir de ahí no se procesa ninguna foto más —el
-guard está *antes* de guardar la imagen y de llamar al modelo, así que no se paga
-esa llamada—, ni se acepta el número a mano, ni contesta el asistente. `reiniciar`
-tampoco se lo salta. El cierre se compara contra el mes calendario, así que expira
-solo: con la factura del mes siguiente el usuario vuelve a entrar.
+**Agotados los 3 intentos** el bot deja de pedir fotos —cada una cuesta una llamada
+al modelo— y pasa a `ASKING_MANUAL_CONSUMPTION`, donde le pide el número escrito:
+"escribime el consumo promedio en kWh". Lo atiende `manual-consumption.flow.ts`, que
+es deliberadamente estricto: **un solo intento**, validado contra `^d+(.d+)?$`, sin
+`fallBack`. Si no matchea, `lockUntilTomorrow()` lo manda a `LOCKED` y el bot no le
+contesta nada hasta la medianoche siguiente.
 
-El número escrito a mano lo atiende `welcome.flow.ts` (el catch-all): mientras el
-paso sea `AWAITING_RECEIPT`, un mensaje que **es** un número se interpreta como el
-consumo promedio. La puerta la abre `isStandaloneKwh()`, que exige que el mensaje no
-sea más que la cifra y palabras de relleno ("son 265 kwh", "mi consumo promedio es
-300"): sin eso, `extractKwh()` se quedaba con el primer número de cualquier frase y
-"quién ganó el mundial 2022" terminaba guardado como 2022 kWh de consumo promedio.
-Una frase con contenido propio se manda al asistente, que es lo que era.
+El desbloqueo no necesita que nadie lo dispare: `getOrCreateSession()` compara
+`lockedUntil` contra el reloj en cada mensaje y, si ya pasó, resetea a
+`AWAITING_RECEIPT` y devuelve `justUnlocked` para que el flow lo salude. El mismo
+mecanismo maneja `planReadyAt` y el mínimo de `MIN_DAYS_BETWEEN_PLANS` (15) entre un
+plan y el siguiente.
 
-Superado ese filtro lo parsea `extractKwh()` — entiende "265", "265 kwh", "1.250" —
-e `isPlausibleConsumption()` descarta lo que no puede ser un consumo mensual (fuera
-de 10–20.000 kWh), para no armar el plan sobre el total a pagar. Se guarda con
-`registerManualAverageConsumption()`, que marca el registro con `source: "manual"`.
+El número que escribe el usuario se guarda con `saveManualConsumption()` como
+**`averageConsumptionKwh`** —que es lo que el bot le pidió— con `source: "manual"`.
+Ese es el dato con el que `calculateTargetKwh()` arma la meta: guardarlo como consumo
+del período dejaba a estos usuarios sin objetivo en kWh.
 
-**Tono:** los tres system prompts están escritos en español neutro y piden respuestas
+**Tono:** los dos system prompts están escritos en español neutro y piden respuestas
 en español colombiano tratando al usuario de "tú", con prohibición explícita de
 insultos y modismos de otros países. No es cosmético: con los prompts escritos en
 voseo rioplatense, el modelo llegó a contestarle "boludo" a un usuario que mandó la
@@ -139,68 +135,20 @@ le escape un precio en una recomendación.
 entre los que el usuario declaró (aire acondicionado > horno/air fryer > plancha):
 ahí está el grueso del 15%, y sin la regla el modelo repartía parejo entre los tres.
 
-## 3. Responder preguntas fuera de guion
+## 3. Preguntas fuera de guion: ya no las contesta la IA
 
-**Archivo:** `src/assistant/assistant.service.ts` -> `answerQuestion()`
+Hubo un tercer servicio (`assistant.service.ts`) que respondía con IA cualquier
+mensaje que no fuera lo que el bot esperaba. **Se eliminó** en `094e5dc` ("remove AI
+free-text fallback"): el bot es 100% guiado y a lo que no entiende responde con un
+mensaje fijo desde `welcome.flow.ts`.
 
-Lo llama `welcomeFlow` (el catch-all de BuilderBot) cuando el usuario escribe algo
-que no era lo que el bot estaba esperando. Le manda el mensaje más el contexto del
-propio usuario — su recibo, sus electrodomésticos, su plan y en qué paso está — y
-recibe `{ onTopic, reply }`:
+Qué implica, para no volver a proponerlo sin querer:
 
-- **Del tema** (su plan, su factura, o energía en general: qué electrodoméstico gasta
-  más, cómo se lee una factura, qué son los estratos, por qué le subió el consumo):
-  responde con sus datos concretos. Ante la duda, el prompt le dice que asuma que la
-  pregunta es del tema.
-- **Fuera del tema** (deportes, chistes, recetas, otros servicios): no la responde ni
-  en parte, avisa que de eso no puede ayudar y reconduce hacia lo que sí hace,
-  proponiendo algo concreto de los datos del usuario.
-
-Como el prompt recibe el paso actual, la respuesta cierra encarrilando: si todavía no
-mandó el recibo, se lo vuelve a pedir.
-
-### El asistente tampoco habla de dinero
-
-Misma regla que el plan, pero acá hacía falta resolver un caso más: qué hacer cuando
-la pregunta **es** sobre un precio ("¿cuánto vale el kWh?", "¿cuánta plata me ahorro?").
-
-Marcarlas como fuera de tema sería raro — son preguntas de energía, y el usuario
-recibiría un "de eso no puedo ayudarte" que suena a bot roto. Así que siguen siendo
-`onTopic: true`, pero el prompt le prohíbe dar cualquier cifra en dinero: dice en una
-frase que de precios no se encarga y reconduce a kWh. Sale así:
-
-> *"De precios y tarifas no me encargo. Sí puedo ayudarte a revisar cuántos kWh
-> consumes: en tu última factura fueron 287 kWh, y tu meta es bajar a 239 kWh o
-> menos…"*
-
-### La meta que ve el asistente es la prometida, no la real
-
-El plan se guarda con `targetReductionPercent: 15`, que es lo que se le pidió a la IA.
-Si el asistente lee ese 15% guardado, se lo repite al usuario — que sólo vio un 10% en
-el mensaje del plan — y el bot se contradice.
-
-Por eso `buildPlanForAssistant()` **reemplaza ese campo por
-`PROMISED_REDUCTION_PERCENT`** antes de mandarle el plan, y el contexto agrega la meta
-en kWh ya calculada ("bajar 10% su consumo, hasta 239 kWh o menos"), marcada como la
-única cifra de meta que puede nombrar. El 15% no sale nunca de `plan.service.ts`.
-
-El contexto también lleva **la fecha de hoy y el estado mensual del plan**
-(`planService.getMonthlyPlanStatus`), para que responda bien a "¿me haces otro plan?".
-Sin la fecha el modelo inventa el mes: llegó a contestar "el próximo lo hacemos en
-septiembre" estando en septiembre.
-
-Corre en todos los pasos. En `AWAITING_RECEIPT` y `COMPLETED` entra por el
-catch-all; durante las preguntas de electrodomésticos el `capture` se queda con el
-mensaje antes que nadie, así que `appliances.flow.ts` decide con
-`looksLikeQuestion()` (en `apps/bot/src/utils/message-validation.ts`) si eso que
-escribió el usuario era una respuesta o una pregunta, y en el segundo caso responde
-y vuelve a hacer la pregunta del paso con `fallBack`, sin perder el lugar.
-
-Esa decisión es una heurística local (signos de interrogación, palabras
-interrogativas, y la regla de que un mensaje con números es una respuesta) y no una
-llamada al modelo, a propósito: clasificar cada respuesta con la IA duplicaría el
-costo de una conversación, y la enorme mayoría de los mensajes en esos pasos son
-respuestas normales.
+- **La IA sólo corre en dos puntos**: leer el recibo y generar el plan. Nada más
+  gasta tokens, y el costo por conversación no depende de cuánto escriba la persona.
+- Se fue con él la superficie donde el bot podía hablar de precios por su cuenta.
+- Los comandos (ver el plan, borrar el progreso) van a vivir en una plantilla aparte,
+  no en texto libre.
 
 ## Cuando la IA no está disponible
 
@@ -210,17 +158,22 @@ demasiado pesada, respuesta no parseable) sale como `AiError` desde
 capturan y degradan en vez de cortar la conversación:
 
 - **Recibo:** devuelve `valid: false` con una explicación. El flow ya sabe pedir
-  la foto de nuevo y el usuario se queda en `AWAITING_RECEIPT`.
-- **Preguntas fuera de guion:** responde que en ese momento no puede.
+  la foto de nuevo y el usuario se queda en `AWAITING_RECEIPT`, gastando un intento.
 - **Plan:** guarda un plan genérico con estado **`PENDIENTE`** (en vez de
-  `GENERADO`), que es la marca de que hay que regenerarlo. El flow avisa que no
-  se pudo personalizar y sugiere `reiniciar`.
+  `GENERADO`), que es la marca de que hay que regenerarlo. El flow avisa que no se
+  pudo personalizar, sin sugerir `reiniciar`: ese comando sólo funciona fuera de
+  producción (ver `restart.flow.ts`).
 
 En los dos casos el motivo real queda en la consola del servidor
 (`[receipt] falló...` / `[plan] falló...`).
 
 ## Cómo probarlo
 
-Con `AI_PROVIDER_API_KEY` cargada, `pnpm sim` y adjuntá una foto de un recibo
-real con el clip 📎. El flujo completo (leer el recibo -> preguntas -> plan) usa
-las dos llamadas.
+Con `AI_PROVIDER_API_KEY_OPENAI` cargada, `pnpm sim` y adjuntá una foto de un recibo
+real con el clip 📎. El flujo completo (leer el recibo -> preguntas -> plan) usa las
+dos llamadas.
+
+Para recorrer los flujos **sin gastar tokens**, `AI_MOCK=true` en el `.env`: ningún
+servicio llama a la API real y cada pedido devuelve el `mock` que define en su
+`requestJson()`. Si un pedido nuevo no define `mock`, revienta con `AiError` a
+propósito, para que no pase inadvertido que esa ruta sí estaba llamando al modelo.

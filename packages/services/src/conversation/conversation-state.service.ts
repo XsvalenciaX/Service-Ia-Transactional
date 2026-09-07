@@ -11,37 +11,69 @@ import {
 
 export { ConversationStep };
 
+export const MAX_RECEIPT_ATTEMPTS = 3;
+export const MIN_DAYS_BETWEEN_PLANS = 15;
+
+const MIN_MS_BETWEEN_PLANS = MIN_DAYS_BETWEEN_PLANS * 24 * 60 * 60 * 1000;
+
 export interface Session {
   user: User;
   state: ConversationState;
+  /** true cuando este llamado detectó que el bloqueo ya venció y reseteó solo. */
+  justUnlocked: boolean;
+  /** true cuando este llamado detectó que ya se puede armar un plan nuevo y reseteó solo. */
+  planRenewed: boolean;
+}
+
+function isLockoutOver(state: ConversationState): boolean {
+  return (
+    state.currentStep === ConversationStep.LOCKED &&
+    state.lockedUntil !== null &&
+    state.lockedUntil <= new Date()
+  );
+}
+
+function isPlanCooldownOver(state: ConversationState): boolean {
+  return (
+    state.currentStep === ConversationStep.COMPLETED &&
+    state.planReadyAt !== null &&
+    Date.now() - state.planReadyAt.getTime() >= MIN_MS_BETWEEN_PLANS
+  );
 }
 
 /**
- * Cada proveedor entrega el número con su propio formato: Twilio manda
- * "+573145636836" y Baileys mandaba "573145636836". Sin normalizar, el mismo
- * teléfono termina como dos usuarios distintos y la persona pierde su
- * historial al cambiar de proveedor (o queda a mitad de un flujo que el bot
- * ya no encuentra). La clave canónica es solo dígitos.
- */
-export function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, "");
-}
-
-/**
- * Resolves (creating if needed) the user and their conversation state from
- * their WhatsApp phone number. Every flow step calls this to know who it is
- * talking to and which step of the conversation they are in.
+ * Resuelve (creando si hace falta) el usuario y su estado de conversación a
+ * partir de su número de WhatsApp. Como todos los flows llaman a esto
+ * primero, acá quedan centralizados los dos auto-reseteos que dependen del
+ * paso del tiempo:
+ *
+ * - Bloqueado (LOCKED) y ya pasó `lockedUntil` -> vuelve a AWAITING_RECEIPT.
+ * - Plan listo (COMPLETED) hace `MIN_DAYS_BETWEEN_PLANS` días o más -> borra
+ *   el ciclo anterior y también vuelve a AWAITING_RECEIPT, para que pueda
+ *   armar un plan nuevo.
  */
 export async function getOrCreateSession(
   phone: string,
   name?: string
 ): Promise<Session> {
-  const user = await userRepository.findOrCreateByPhone(
-    normalizePhone(phone),
-    name
-  );
-  const state = await conversationStateRepository.getOrCreate(user.id);
-  return { user, state };
+  const user = await userRepository.findOrCreateByPhone(phone, name);
+  let state = await conversationStateRepository.getOrCreate(user.id);
+
+  let justUnlocked = false;
+  let planRenewed = false;
+
+  if (isLockoutOver(state)) {
+    state = await conversationStateRepository.resetState(
+      user.id,
+      ConversationStep.AWAITING_RECEIPT
+    );
+    justUnlocked = true;
+  } else if (isPlanCooldownOver(state)) {
+    state = await resetConversation(user.id, ConversationStep.AWAITING_RECEIPT);
+    planRenewed = true;
+  }
+
+  return { user, state, justUnlocked, planRenewed };
 }
 
 export async function advanceStep(
@@ -51,69 +83,41 @@ export async function advanceStep(
   return conversationStateRepository.setStep(userId, step);
 }
 
-/**
- * Suma un intento fallido de leer el consumo promedio de una foto y devuelve
- * en cuál va. A partir del tercero, el flow le pide al usuario que escriba el
- * número a mano en vez de seguir pidiéndole fotos.
- */
-export async function registerReceiptAttempt(userId: string): Promise<number> {
-  const state = await conversationStateRepository.registerReceiptAttempt(userId);
-  return state.receiptAttempts;
-}
-
-/**
- * Cierra el proceso del mes porque el usuario agotó los intentos de foto sin
- * que pudiéramos sacarle el consumo. A partir de acá no se procesa ninguna
- * imagen más (que es lo que cuesta plata) ni se acepta el número a mano.
- */
-export async function closeConversation(
+export async function registerFailedReceiptAttempt(
   userId: string
 ): Promise<ConversationState> {
-  return conversationStateRepository.closeConversation(userId);
+  return conversationStateRepository.incrementReceiptAttempts(userId);
 }
 
-/**
- * El cierre vale por el mes calendario: al mes siguiente le llega otra
- * factura y tiene derecho a volver a intentarlo. Se compara contra el mes en
- * curso en vez de guardar un booleano justamente para que expire solo.
- */
-export function isConversationClosed(state: ConversationState): boolean {
-  if (!state.closedAt) {
-    return false;
-  }
-
-  const ahora = new Date();
-  return (
-    state.closedAt.getFullYear() === ahora.getFullYear() &&
-    state.closedAt.getMonth() === ahora.getMonth()
-  );
+/** Medianoche del día siguiente al momento en que se llama. */
+function startOfNextDay(): Date {
+  const next = new Date();
+  next.setHours(24, 0, 0, 0);
+  return next;
 }
 
-/**
- * Un cierre de un mes anterior ya expiró, pero `receiptAttempts` sigue en el
- * tope: sin devolverle los intentos, el primer traspié del mes nuevo lo
- * volvería a cerrar de entrada. Los flows llaman a esto antes de procesar.
- */
-export async function reopenIfExpired(
-  state: ConversationState
-): Promise<void> {
-  if (state.closedAt && !isConversationClosed(state)) {
-    await conversationStateRepository.resetReceiptAttempts(state.userId);
-  }
+export async function lockUntilTomorrow(userId: string): Promise<ConversationState> {
+  return conversationStateRepository.setLockout(userId, startOfNextDay());
+}
+
+/** Se llama cuando el plan terminó de generarse (ver plan.flow.ts). */
+export async function markPlanReady(userId: string): Promise<ConversationState> {
+  return conversationStateRepository.setPlanReady(userId);
 }
 
 /**
  * Deja al usuario como si nunca hubiera escrito: borra su recibo, sus
- * electrodomésticos y su plan, y lo devuelve al paso de bienvenida. Sin
- * borrar los datos previos el flujo se repetiría sobre ellos y el plan
- * terminaría generándose con electrodomésticos duplicados.
+ * electrodomésticos y su plan, y lo devuelve a `targetStep` (además de
+ * limpiar intentos/bloqueo/fecha del plan). Sin borrar los datos previos el
+ * flujo se repetiría sobre ellos y el plan terminaría generándose con
+ * electrodomésticos duplicados.
  */
 export async function resetConversation(
-  userId: string
+  userId: string,
+  targetStep: ConversationStep = ConversationStep.WELCOME
 ): Promise<ConversationState> {
   await planRepository.deleteAllByUserId(userId);
   await applianceRepository.deleteAllByUserId(userId);
   await receiptRepository.deleteAllByUserId(userId);
-  await conversationStateRepository.resetReceiptAttempts(userId);
-  return conversationStateRepository.setStep(userId, ConversationStep.WELCOME);
+  return conversationStateRepository.resetState(userId, targetStep);
 }

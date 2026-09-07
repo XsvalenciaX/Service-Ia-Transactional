@@ -26,10 +26,11 @@ model Receipt {
   id            String   @id @default(cuid())
   userId        String
   user          User     @relation(fields: [userId], references: [id])
-  imagePath     String
-  // Lo que la IA extrajo de la imagen: consumo del periodo, consumo promedio
-  // y fechas del periodo (ver packages/services/AI_INTEGRATION.md). Nunca
-  // montos: el bot no habla de dinero en ningun momento.
+  // Null cuando el consumo se cargó a mano (ver extractedData.source),
+  // porque se agotaron los intentos de leer la foto.
+  imagePath     String?
+  // Datos extraidos del recibo (consumo kWh, valor, periodo, etc).
+  // Lo que la IA extrajo de la imagen (ver packages/services/AI_INTEGRATION.md).
   extractedData Json?
   createdAt     DateTime @default(now())
 
@@ -48,7 +49,7 @@ model Appliance {
   user             User          @relation(fields: [userId], references: [id])
   type             ApplianceType
   frequencyPerWeek Int?
-  usageNote        String?
+  hoursPerDay      Int?
   createdAt        DateTime      @default(now())
 
   @@map("appliances")
@@ -76,6 +77,8 @@ model SavingsPlan {
 enum ConversationStep {
   WELCOME
   AWAITING_RECEIPT
+  ASKING_MANUAL_CONSUMPTION
+  LOCKED
   ASKING_AIRE
   ASKING_PLANCHA
   ASKING_HORNO
@@ -83,19 +86,21 @@ enum ConversationStep {
 }
 
 model ConversationState {
-  id          String           @id @default(cuid())
-  userId      String           @unique
-  user        User             @relation(fields: [userId], references: [id])
-  currentStep ConversationStep @default(WELCOME)
-  // Fotos que el usuario mandó sin que pudiéramos sacarles el consumo
-  // promedio (no era una factura, o era una foto parcial). A partir del
-  // tercer intento se le pide que lo escriba a mano.
-  receiptAttempts Int          @default(0)
-  // Cuándo se cerró el proceso por haber agotado los intentos de foto. El
-  // cierre vale por el mes calendario: al mes siguiente el usuario puede
-  // volver a intentarlo con su nueva factura. Null = nunca se cerró.
-  closedAt    DateTime?
-  updatedAt   DateTime         @updatedAt
+  id              String           @id @default(cuid())
+  userId          String           @unique
+  user            User             @relation(fields: [userId], references: [id])
+  currentStep     ConversationStep @default(WELCOME)
+  // Fotos de recibo rechazadas por la IA en esta ronda; se resetea a 0 cada
+  // vez que se sale de AWAITING_RECEIPT/ASKING_MANUAL_CONSUMPTION.
+  receiptAttempts Int              @default(0)
+  // Si está en el futuro, el usuario está bloqueado (ver LOCKED) y no se le
+  // contesta nada hasta esa fecha.
+  lockedUntil     DateTime?
+  // Momento en que se generó el plan vigente (ver plan.flow.ts). Con
+  // currentStep=COMPLETED, hasta que no pasen MIN_DAYS_BETWEEN_PLANS desde
+  // acá no se puede generar un plan nuevo.
+  planReadyAt     DateTime?
+  updatedAt       DateTime         @updatedAt
 
   @@map("conversation_states")
 }

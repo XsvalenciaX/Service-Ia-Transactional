@@ -6,7 +6,7 @@ import type { ImageMediaType } from "./image.js";
  * ($0,20 por millón de tokens de entrada, $1,20 de salida), que es lo que se
  * necesita para leer la foto de un recibo. Si en algún momento la extracción
  * se queda corta, `AI_MODEL` en el .env permite probar uno más capaz
- * (`gpt-5.6-luna-pro`, `gpt-5.4`) sin tocar código.
+ * (`gpt-5.6-luna-pro`) sin tocar código.
  */
 export const AI_MODEL =
   process.env.AI_MODEL?.trim() ||
@@ -21,6 +21,12 @@ export const AI_MODEL =
  * si la extracción falla, sabiendo que multiplica el costo.
  */
 const REASONING_EFFORT = process.env.AI_REASONING_EFFORT ?? "none";
+
+/**
+ * Con AI_MOCK=true (ver .env) ningún servicio llama a la API real: sirve
+ * para levantar el bot/simulador y probar los flujos sin gastar en tokens.
+ */
+export const AI_MOCK = process.env.AI_MOCK === "true";
 
 // Las imágenes viajan en base64 dentro del request, así que una foto muy
 // pesada es un request muy pesado (y un error del lado de la API). Las fotos
@@ -118,13 +124,15 @@ export interface AiImage {
   base64: string;
 }
 
-export interface AiJsonRequest {
+export interface AiJsonRequest<T = unknown> {
   /** Rol y reglas fijas del pedido. */
   system: string;
   /** El pedido concreto, incluida la forma del JSON esperado. */
   prompt: string;
   image?: AiImage;
   maxTokens?: number;
+  /** Se devuelve en vez de llamar al modelo real cuando AI_MOCK=true. */
+  mock?: () => T;
 }
 
 /**
@@ -159,7 +167,17 @@ export function assertImageSize(base64: string): void {
  * razonamiento: las dos tareas (extraer datos de un recibo, redactar un plan)
  * son de un solo paso y así la prueba sale lo más barata posible.
  */
-export async function requestJson<T>(request: AiJsonRequest): Promise<T> {
+export async function requestJson<T>(request: AiJsonRequest<T>): Promise<T> {
+  if (AI_MOCK) {
+    if (!request.mock) {
+      throw new AiError(
+        "AI_MOCK está activo pero este pedido no definió una respuesta simulada (mock)."
+      );
+    }
+    console.log("[ai] MOCK — no se llamó a la API real");
+    return request.mock();
+  }
+
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
 
   if (request.image) {

@@ -78,11 +78,17 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
   ni markdown. Nada de insultos ni de modismos de otros países.
 - Responde únicamente con el JSON pedido.`;
 
+// Reflejan las preguntas que el bot hace de verdad (ver
+// apps/bot/src/flows/appliance-questions.ts) porque es el texto que ve el
+// modelo al armar el plan. Van en "tú" como el resto de los prompts: con los
+// prompts escritos en voseo, el modelo llegó a contestarle "boludo" a un
+// usuario que mandó la foto equivocada.
 const APPLIANCE_QUESTIONS: Record<ApplianceType, string> = {
-  [ApplianceType.AIRE]: "¿Tienes aire acondicionado? ¿Cuántas veces por semana y cuántas horas lo usas?",
-  [ApplianceType.PLANCHA]: "¿Tienes plancha? ¿Cuántas veces por semana la usas?",
+  [ApplianceType.AIRE]:
+    "¿Tienes aire acondicionado? ¿Cuántas veces a la semana lo usas y cuántas horas al día en promedio?",
+  [ApplianceType.PLANCHA]: "¿Tienes plancha? ¿Cuántas veces a la semana la usas?",
   [ApplianceType.HORNO_AIRFRYER]:
-    "¿Tienes horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces por semana lo usas?",
+    "¿Tienes horno eléctrico o freidora de aire (air fryer)? ¿Cuántas veces a la semana lo usas?",
 };
 
 function buildApplianceQaText(appliances: Appliance[]): string {
@@ -93,11 +99,13 @@ function buildApplianceQaText(appliances: Appliance[]): string {
   return appliances
     .map((appliance) => {
       const question = APPLIANCE_QUESTIONS[appliance.type];
-      const frequency =
-        appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined
-          ? `${appliance.frequencyPerWeek} veces/semana`
-          : "frecuencia no especificada";
-      return `Pregunta: ${question}\nRespuesta: ${appliance.usageNote ?? "sin detalle"} (${frequency})`;
+      const detail =
+        appliance.hoursPerDay !== null && appliance.hoursPerDay !== undefined
+          ? `${appliance.hoursPerDay} horas/día`
+          : appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined
+            ? `${appliance.frequencyPerWeek} veces/semana`
+            : "sin detalle";
+      return `Pregunta: ${question}\nRespuesta: ${detail}`;
     })
     .join("\n\n");
 }
@@ -195,6 +203,16 @@ async function generatePlanContent(
       prompt: `${request.context}\n\n${request.instructions}`,
       image: request.image,
       maxTokens: 4096,
+      mock: () => ({
+        targetReductionPercent: PLAN_REDUCTION_PERCENT,
+        summary:
+          "Plan simulado (AI_MOCK=true, no se llamó a la IA real) a partir de tus datos.",
+        recommendations: [
+          "Usa el aire acondicionado en 24 °C y apágalo media hora antes de salir.",
+          "Plancha toda la ropa junta en una sola tanda, en vez de prender la plancha varias veces.",
+          "Aprovecha el calor residual del horno: apágalo unos minutos antes de terminar la cocción.",
+        ],
+      }),
     });
   } catch (error) {
     if (error instanceof AiError) {

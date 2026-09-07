@@ -91,6 +91,15 @@ async function analyzeReceiptWithModel(
       system: ANALYSIS_SYSTEM,
       prompt: request.instructions,
       image: request.image,
+      // Sin monto: el bot no habla de dinero, así que el mock devuelve
+      // exactamente los campos que devuelve la IA de verdad.
+      mock: () => ({
+        valid: true,
+        consumptionKwh: 350,
+        averageConsumptionKwh: 320,
+        periodStart: "2026-08-01",
+        periodEnd: "2026-08-31",
+      }),
     });
   } catch (error) {
     if (error instanceof AiError) {
@@ -125,22 +134,6 @@ export function isPlausibleConsumption(kwh: number): boolean {
   );
 }
 
-/**
- * Guarda el consumo promedio que el usuario escribió a mano, cuando no hubo
- * forma de sacarlo de la foto. Queda marcado con `source: "manual"` para
- * poder distinguirlo después de lo que extrajo la IA.
- */
-export async function registerManualAverageConsumption(
-  userId: string,
-  averageConsumptionKwh: number
-): Promise<Receipt> {
-  return receiptRepository.create({
-    userId,
-    imagePath: "",
-    extractedData: { averageConsumptionKwh, source: "manual" },
-  });
-}
-
 export async function processReceipt(
   userId: string,
   imagePath: string
@@ -171,4 +164,24 @@ export async function processReceipt(
     receipt,
     attempt: await receiptRepository.countByUserId(userId),
   };
+}
+
+/**
+ * Se usa cuando se agotaron los intentos de leer la foto: el usuario mismo
+ * escribe su consumo. Sin `imagePath` ni el resto de los datos del recibo
+ * (período), sólo el kWh que dio.
+ *
+ * Se guarda como `averageConsumptionKwh` porque es lo que el bot le pidió
+ * ("escribime el consumo promedio en kWh"): es el dato con el que
+ * `calculateTargetKwh()` arma la meta y el que PLAN_SYSTEM usa de referencia.
+ * Guardarlo como consumo del período dejaba a estos usuarios sin objetivo.
+ */
+export async function saveManualConsumption(
+  userId: string,
+  averageConsumptionKwh: number
+): Promise<Receipt> {
+  return receiptRepository.create({
+    userId,
+    extractedData: { averageConsumptionKwh, source: "manual" },
+  });
 }

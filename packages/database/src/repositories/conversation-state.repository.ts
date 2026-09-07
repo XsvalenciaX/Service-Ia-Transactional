@@ -21,44 +21,50 @@ export async function setStep(
   });
 }
 
-/**
- * Suma uno a los intentos de foto que no dieron el consumo promedio y
- * devuelve el estado ya actualizado, para que el flow sepa en qué intento va.
- */
-export async function registerReceiptAttempt(
+export async function incrementReceiptAttempts(
   userId: string
 ): Promise<ConversationState> {
-  return prisma.conversationState.upsert({
+  return prisma.conversationState.update({
     where: { userId },
-    update: { receiptAttempts: { increment: 1 } },
-    create: { userId, receiptAttempts: 1 },
+    data: { receiptAttempts: { increment: 1 } },
   });
 }
 
-export async function resetReceiptAttempts(
-  userId: string
+export async function setLockout(
+  userId: string,
+  lockedUntil: Date
 ): Promise<ConversationState> {
-  return prisma.conversationState.upsert({
+  return prisma.conversationState.update({
     where: { userId },
-    // Reabre también la conversación: si se había cerrado por agotar los
-    // intentos, empezar de cero es justamente lo que la vuelve a habilitar.
-    update: { receiptAttempts: 0, closedAt: null },
-    create: { userId },
+    data: { currentStep: ConversationStep.LOCKED, lockedUntil },
+  });
+}
+
+export async function setPlanReady(userId: string): Promise<ConversationState> {
+  return prisma.conversationState.update({
+    where: { userId },
+    data: { planReadyAt: new Date() },
   });
 }
 
 /**
- * Marca la conversación como cerrada por haber agotado los intentos de foto.
- * Se guarda la fecha, no un booleano, porque el cierre dura sólo el mes
- * calendario en curso: con la factura del mes siguiente vuelve a habilitarse.
+ * Vuelve a `resetStep` y borra intentos/bloqueo/fecha del último plan. Se
+ * usa para el auto-reseteo cuando vence el bloqueo o cuando ya se puede
+ * generar un plan nuevo (-> AWAITING_RECEIPT), y para un "reiniciar" manual
+ * (-> WELCOME).
  */
-export async function closeConversation(
-  userId: string
+export async function resetState(
+  userId: string,
+  resetStep: ConversationStep
 ): Promise<ConversationState> {
-  return prisma.conversationState.upsert({
+  return prisma.conversationState.update({
     where: { userId },
-    update: { closedAt: new Date() },
-    create: { userId, closedAt: new Date() },
+    data: {
+      currentStep: resetStep,
+      lockedUntil: null,
+      receiptAttempts: 0,
+      planReadyAt: null,
+    },
   });
 }
 

@@ -8,7 +8,7 @@ export { ApplianceType };
 
 export interface ApplianceAnswer {
   frequencyPerWeek?: number;
-  usageNote?: string;
+  hoursPerDay?: number;
 }
 
 export async function saveApplianceAnswer(
@@ -20,7 +20,7 @@ export async function saveApplianceAnswer(
     userId,
     type,
     frequencyPerWeek: answer.frequencyPerWeek,
-    usageNote: answer.usageNote,
+    hoursPerDay: answer.hoursPerDay,
   });
 }
 
