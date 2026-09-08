@@ -62,6 +62,17 @@ de las filas que ya estaban guardadas.
 suma un intento en `ConversationState.receiptAttempts` y deja al usuario en
 `AWAITING_RECEIPT` para que mande otra. El tope son `MAX_RECEIPT_ATTEMPTS` (3).
 
+**Omitir no es devolver 0.** El prompt lo dice explícitamente, y `sanitizeAnalysis()`
+lo hace cumplir: cualquier `consumptionKwh` o `averageConsumptionKwh` fuera del rango
+plausible (10–20.000 kWh, el mismo `isPlausibleConsumption()` del número a mano) se
+normaliza a `undefined` antes de guardar nada, y queda un `console.warn`.
+
+No es teórico: el modelo devolvió `averageConsumptionKwh: 0` en una lectura real. Un 0
+pasa cualquier chequeo de `=== undefined`, así que el bot llegó a decir *"un consumo
+promedio de 0 kWh"* y habría armado el plan con una meta de 0 kWh. `plan.service.ts`
+valida el rango otra vez al leer de la base, por las filas que se guardaron antes de
+este filtro.
+
 **Cuando sí se lee**, el mensaje de confirmación muestra los *dos* números y dice
 cuál manda: "leí un consumo de 106 kWh en el período facturado y un consumo promedio
 de 112 kWh en los últimos meses. Tu plan lo armo sobre el promedio". Enseñar sólo el
