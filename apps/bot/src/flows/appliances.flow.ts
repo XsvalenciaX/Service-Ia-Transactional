@@ -26,6 +26,12 @@ const PENDING_FREQUENCY_KEY = "pendingApplianceFrequency";
 // achica y salta al siguiente (ver advanceToNextAppliance).
 const PENDING_APPLIANCE_KEYS = "pendingApplianceKeys";
 
+// Horas/día pendientes de un followUp tipo "list" que además tiene `extra`
+// (hoy sólo el aire, con la pregunta de temperatura): se guardan acá hasta
+// que la pregunta de `extra` las junta con frecuencia + extra en un solo
+// Appliance.
+const PENDING_HOURS_KEY = "pendingApplianceHours";
+
 const APPLIANCE_SELECTION_CONTENT_SID = "HXf2c39fd1d39ecc89cadf8ee39391f61f";
 
 const questionsByKey = new Map(APPLIANCE_QUESTIONS.map((q) => [q.key, q]));
@@ -95,8 +101,53 @@ function buildTextQuestionFlow(options: {
  * la cantidad que quedó pendiente en `state` (elegida en la lista o en el
  * overflow) junto con esta respuesta, en un solo `Appliance`, y recién ahí
  * sigue con el próximo electrodoméstico pendiente.
+ *
+ * Si el followUp tiene una pregunta `extra` (hoy sólo el aire, temperatura),
+ * en vez de guardar acá deja las horas pendientes en `state` y salta a
+ * `extraFlow`, que es quien junta todo y guarda.
  */
 function buildThenQuestionFlow(options: {
+  triggerKeyword: string;
+  question: TextQuestion;
+  applianceType: ApplianceType;
+  extraFlow?: TFlow;
+}): TFlow {
+  return addKeyword([options.triggerKeyword]).addAnswer(
+    options.question.prompt,
+    { capture: true },
+    async (ctx: FlowContext, { gotoFlow, fallBack, state }: FlowMethods) => {
+      if (isRestartCommand(ctx.body)) {
+        return gotoFlow(restartFlow);
+      }
+
+      const body = isTextMessage(ctx) ? ctx.body.trim() : "";
+      if (!isTextMessage(ctx) || !options.question.validation.pattern.test(body)) {
+        return fallBack(options.question.validation.feedback);
+      }
+
+      if (options.extraFlow) {
+        await state.update({ [PENDING_HOURS_KEY]: Number(body) });
+        return gotoFlow(options.extraFlow);
+      }
+
+      const frequencyPerWeek = state.get<number>(PENDING_FREQUENCY_KEY);
+      const { user } = await conversationStateService.getOrCreateSession(ctx.from);
+      await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
+        frequencyPerWeek,
+        [options.question.field]: Number(body),
+      });
+      return advanceToNextAppliance(user.id, state, gotoFlow);
+    }
+  );
+}
+
+/**
+ * Pregunta `extra` de la cadena lista→horas→extra (hoy sólo el aire,
+ * temperatura): junta la cantidad y las horas que quedaron pendientes en
+ * `state` con esta respuesta, guarda el `Appliance` completo, y sigue con
+ * el próximo electrodoméstico pendiente.
+ */
+function buildExtraQuestionFlow(options: {
   triggerKeyword: string;
   question: TextQuestion;
   applianceType: ApplianceType;
@@ -115,9 +166,11 @@ function buildThenQuestionFlow(options: {
       }
 
       const frequencyPerWeek = state.get<number>(PENDING_FREQUENCY_KEY);
+      const hoursPerDay = state.get<number>(PENDING_HOURS_KEY);
       const { user } = await conversationStateService.getOrCreateSession(ctx.from);
       await appliancesService.saveApplianceAnswer(user.id, options.applianceType, {
         frequencyPerWeek,
+        hoursPerDay,
         [options.question.field]: Number(body),
       });
       return advanceToNextAppliance(user.id, state, gotoFlow);
@@ -212,23 +265,35 @@ for (const question of APPLIANCE_QUESTIONS) {
     });
     followUpFlows.push(followUpFlow);
   } else {
+    const listFollowUp = question.followUp;
+    const extraFlow = listFollowUp.extra
+      ? buildExtraQuestionFlow({
+          triggerKeyword: `_ask_${question.key}_extra_`,
+          question: listFollowUp.extra,
+          applianceType: question.applianceType,
+        })
+      : undefined;
     const thenFlow = buildThenQuestionFlow({
       triggerKeyword: `_ask_${question.key}_then_`,
-      question: question.followUp.then,
+      question: listFollowUp.then,
       applianceType: question.applianceType,
+      extraFlow,
     });
     const overflowFlow = buildOverflowFlow({
       triggerKeyword: `_ask_${question.key}_overflow_`,
-      overflow: question.followUp.overflow,
+      overflow: listFollowUp.overflow,
       thenFlow,
     });
     followUpFlow = buildListQuestionFlow({
       triggerKeyword: `_ask_${question.key}_followup_`,
-      question: question.followUp,
+      question: listFollowUp,
       overflowFlow,
       thenFlow,
     });
     followUpFlows.push(followUpFlow, overflowFlow, thenFlow);
+    if (extraFlow) {
+      followUpFlows.push(extraFlow);
+    }
   }
 
   followUpFlowByKey.set(question.key, followUpFlow);

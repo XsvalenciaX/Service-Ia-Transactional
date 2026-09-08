@@ -7,6 +7,7 @@ export async function create(data: {
   type: ApplianceType;
   frequencyPerWeek?: number;
   hoursPerDay?: number;
+  temperatureCelsius?: number;
 }): Promise<Appliance> {
   return prisma.appliance.create({
     data: {
@@ -14,6 +15,7 @@ export async function create(data: {
       type: data.type,
       frequencyPerWeek: data.frequencyPerWeek,
       hoursPerDay: data.hoursPerDay,
+      temperatureCelsius: data.temperatureCelsius,
     },
   });
 }

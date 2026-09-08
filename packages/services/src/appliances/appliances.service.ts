@@ -9,6 +9,7 @@ export { ApplianceType };
 export interface ApplianceAnswer {
   frequencyPerWeek?: number;
   hoursPerDay?: number;
+  temperatureCelsius?: number;
 }
 
 export async function saveApplianceAnswer(
@@ -21,6 +22,7 @@ export async function saveApplianceAnswer(
     type,
     frequencyPerWeek: answer.frequencyPerWeek,
     hoursPerDay: answer.hoursPerDay,
+    temperatureCelsius: answer.temperatureCelsius,
   });
 }
 

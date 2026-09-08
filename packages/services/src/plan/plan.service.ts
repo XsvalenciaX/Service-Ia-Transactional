@@ -123,12 +123,16 @@ function buildApplianceQaText(appliances: Appliance[]): string {
   return appliances
     .map((appliance) => {
       const question = getApplianceQuestionText(appliance.type);
-      const detail =
-        appliance.hoursPerDay !== null && appliance.hoursPerDay !== undefined
-          ? `${appliance.hoursPerDay} horas/día`
-          : appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined
-            ? `${appliance.frequencyPerWeek} veces/semana`
-            : "sin detalle";
+      const parts: string[] = [];
+      if (appliance.hoursPerDay !== null && appliance.hoursPerDay !== undefined) {
+        parts.push(`${appliance.hoursPerDay} horas/día`);
+      } else if (appliance.frequencyPerWeek !== null && appliance.frequencyPerWeek !== undefined) {
+        parts.push(`${appliance.frequencyPerWeek} veces/semana`);
+      }
+      if (appliance.temperatureCelsius !== null && appliance.temperatureCelsius !== undefined) {
+        parts.push(`${appliance.temperatureCelsius}°C`);
+      }
+      const detail = parts.length > 0 ? parts.join(", ") : "sin detalle";
       return `Pregunta: ${question}\nRespuesta: ${detail}`;
     })
     .join("\n\n");

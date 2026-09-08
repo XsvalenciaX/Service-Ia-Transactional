@@ -34,7 +34,7 @@ export interface TextQuestion {
   kind: "text";
   prompt: string;
   validation: Validation;
-  field: "frequencyPerWeek" | "hoursPerDay";
+  field: "frequencyPerWeek" | "hoursPerDay" | "temperatureCelsius";
 }
 
 export interface ListQuestion {
@@ -52,6 +52,12 @@ export interface ListQuestion {
    * frecuencia en un solo `Appliance`.
    */
   then: TextQuestion;
+  /**
+   * Pregunta opcional que se hace después de `then` (p.ej. la temperatura
+   * del aire acondicionado). Su respuesta se guarda en el mismo `Appliance`
+   * junto con la frecuencia y las horas.
+   */
+  extra?: TextQuestion;
 }
 
 export interface ApplianceQuestion {
@@ -93,6 +99,7 @@ const APPLIANCE_QUANTITY_CONTENT_SID = "HXfd6c127d25adf2a98b60008a98e22178";
 function quantityAndHoursFollowUp(options: {
   pluralLabel: string;
   fallbackText: string;
+  extra?: TextQuestion;
 }): ListQuestion {
   return {
     kind: "list",
@@ -123,8 +130,19 @@ function quantityAndHoursFollowUp(options: {
       },
       field: "hoursPerDay",
     },
+    extra: options.extra,
   };
 }
+
+const TEMPERATURE_FEEDBACK =
+  "Necesito la temperatura en grados, un número entre 16 y 30, por ejemplo: 24";
+
+const AIRE_TEMPERATURE_QUESTION: TextQuestion = {
+  kind: "text",
+  prompt: "¿A qué temperatura lo dejas puesto normalmente (en °C)?",
+  validation: { pattern: /^(1[6-9]|2[0-9]|30)$/, feedback: TEMPERATURE_FEEDBACK },
+  field: "temperatureCelsius",
+};
 
 export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
   {
@@ -134,9 +152,11 @@ export const APPLIANCE_QUESTIONS: ApplianceQuestion[] = [
     followUp: quantityAndHoursFollowUp({
       pluralLabel: "aires acondicionados",
       fallbackText: "¿Cuántos aires acondicionados tiene la vivienda?",
+      extra: AIRE_TEMPERATURE_QUESTION,
     }),
     aiQuestionText:
-      "¿Tienes aire acondicionado? ¿Cuántos días de la semana lo usas y cuántas horas al día en promedio?",
+      "¿Tienes aire acondicionado? ¿Cuántos días de la semana lo usas, cuántas horas al día en " +
+      "promedio y a qué temperatura lo dejas puesto?",
   },
   {
     key: "plancha",
