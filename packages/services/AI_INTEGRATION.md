@@ -162,9 +162,38 @@ recibo ni existe en la base, y `buildReceiptText()` igual filtra `amount` y
 base que no haya corrido la migración. Si el dato no viaja, no hay forma de que se
 le escape un precio en una recomendación.
 
-`PLAN_SYSTEM` también le pide **priorizar los electrodomésticos de mayor potencia**
-entre los que el usuario declaró (aire acondicionado > horno/air fryer > plancha):
-ahí está el grueso del 15%, y sin la regla el modelo repartía parejo entre los tres.
+### Cómo elige qué recomendar
+
+El cuestionario pasó de 3 electrodomésticos a **19**, así que la regla vieja
+("aire > horno > plancha") dejó de servir: el modelo se quedaba sin criterio para
+los otros 16 y tendía a repartir un consejo por cada uno.
+
+`PLAN_SYSTEM` ahora le da dos cosas:
+
+1. **Una tabla de potencia típica** en un hogar colombiano, en cuatro tramos — muy
+   alta (calentador de agua eléctrico, estufa: 2.000–5.500 W), alta (aire, calefactor,
+   horno/air fryer, lavaplatos, plancha, microondas, secador de pelo, aspiradora),
+   media (arrocera, lavadora, licuadora, secadora a gas) y baja (TV, consola, sonido,
+   ventilador, plancha de pelo).
+2. **El criterio de orden: potencia × tiempo de uso declarado**, no potencia sola. Es
+   la parte que más cambia el resultado — un secador de pelo consume mucho pero se usa
+   minutos, y un ventilador consume poco pero puede quedar prendido toda la noche.
+
+Con 8 electrodomésticos declarados, el plan sale ordenado así: primero calentador de
+agua y estufa (potencia muy alta × uso diario), después ventilador de 8 h/día y TV de
+6 h/día, y **descarta** secador de pelo, plancha de pelo y licuadora pese a que dos de
+ellos son de potencia alta. Sin la regla del tiempo, esos tres se colaban.
+
+### Máximo 4 recomendaciones
+
+`MAX_RECOMMENDATIONS = 4`, pedido en el prompt **y aplicado en código**
+(`capRecommendations()`): con 19 electrodomésticos posibles, un plan sin tope se
+convierte en un listado que en WhatsApp nadie lee. Como las recomendaciones vienen
+ordenadas de mayor a menor ahorro, cortar por el final deja las que más pesan.
+
+El tope va en las dos capas a propósito: el prompt es lo que hace que el modelo
+*elija* bien las 4 (no que escriba 8 y perdamos las mejores), y el corte en código es
+la garantía de que el usuario nunca vea más de 4 aunque el modelo se entusiasme.
 
 ## 3. Preguntas fuera de guion: ya no las contesta la IA
 

@@ -56,10 +56,24 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
 - Basa cada recomendación en esos datos concretos: menciona el electrodoméstico y la
   frecuencia que el usuario declaró, y usa el consumo en kWh del recibo para
   dimensionar el ahorro.
-- Prioriza los electrodomésticos de mayor potencia entre los que el usuario declaró
-  tener: el aire acondicionado gasta mucho más que el horno o la freidora de aire, y
-  esos mucho más que la plancha. Las primeras recomendaciones tienen que atacar los
-  de mayor consumo, que es donde está el grueso del 15%.
+- El usuario puede haber declarado muchos electrodomésticos. NO hagas una
+  recomendación por cada uno: elige los pocos que más kWh pueden ahorrar y concentra
+  el plan ahí. Lo que decide no es la potencia sola, sino POTENCIA × TIEMPO DE USO
+  declarado: un secador de pelo consume mucho pero se usa minutos, y un ventilador
+  consume poco pero puede quedar prendido toda la noche.
+- Potencia típica en un hogar colombiano, para que estimes ese peso:
+  · Muy alta (2.000-5.500 W): calentador de agua eléctrico (ducha), estufa eléctrica.
+  · Alta (1.000-2.500 W): aire acondicionado, calefactor, horno eléctrico o freidora
+    de aire, máquina lavaplatos, plancha de ropa, microondas, secador de pelo,
+    aspiradora.
+  · Media (300-800 W): arrocera, lavadora, licuadora, secadora de ropa a gas (de
+    electricidad sólo gasta el motor del tambor).
+  · Baja (40-200 W): televisor, consola de videojuegos, equipo de sonido, ventilador,
+    plancha de pelo.
+- Cruza esa potencia con la frecuencia o las horas que el usuario declaró y ordena
+  las recomendaciones por el ahorro en kWh que consigue cada una, de mayor a menor.
+  Ahí está el grueso del 15%: dos o tres cambios en lo que más pesa rinden más que
+  muchos consejos repartidos.
 - Nunca hables de dinero: ni precios, ni pesos, ni tarifas, ni cuánto se ahorra en la
   factura. El ahorro se cuenta en kWh y en acciones concretas.
 - No escribas NINGÚN porcentaje ni la meta total de ahorro, ni en "summary" ni en
@@ -69,11 +83,14 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
   Diseña el plan para el 15%, pero cuéntalo en acciones y, si ayuda, en los kWh que
   ahorra cada electrodoméstico por separado.
 - Si tienes el consumo promedio de los últimos meses (averageConsumptionKwh), úsalo
-  como referencia: calcula el 15% sobre ese promedio y comenta si el mes facturado
-  estuvo por encima o por debajo de lo habitual. Si no lo tienes, trabaja con el
-  consumo del período y no lo menciones.
+  como referencia interna para dimensionar cuántos kWh hay que recortar en total, y
+  comenta si el mes facturado estuvo por encima o por debajo de lo habitual. Esa
+  cuenta la haces para elegir las recomendaciones, no para escribirla. Si no tienes
+  el promedio, trabaja con el consumo del período y no lo menciones.
 - Si el usuario dijo que no tiene un electrodoméstico, no lo recomiendes.
-- Entre 3 y 5 recomendaciones, cada una accionable y en una o dos frases.
+- MÁXIMO 4 recomendaciones, y menos si con menos alcanza: cada una accionable y en
+  una o dos frases. Tres sobre lo que de verdad mueve la aguja sirven más que cinco
+  diluidas, y en WhatsApp una lista larga no se lee.
 - Escribe en español colombiano neutro, tratando al usuario de "tú", sin tecnicismos
   ni markdown. Nada de insultos ni de modismos de otros países.
 - Responde únicamente con el JSON pedido.`;
@@ -158,11 +175,30 @@ async function buildPlanGenerationRequest(
   const instructions =
     `Con esta información, genera un plan de ahorro energético del ${PLAN_REDUCTION_PERCENT}% en JSON con esta forma: ` +
     '{ "targetReductionPercent": number, "summary": string, "recommendations": string[] }. ' +
+    `"recommendations" lleva ${MAX_RECOMMENDATIONS} elementos como máximo, ordenados de mayor a menor ahorro en kWh. ` +
     'En "summary" resume en una o dos frases de qué se trata el plan y de dónde sale el ahorro, ' +
     "sin mencionar dinero y sin escribir ningún porcentaje ni la meta total: de eso se " +
     "encarga el bot. En \"targetReductionPercent\" sí devuelve el número, que es de uso interno.";
 
   return { image, context, instructions };
+}
+
+/**
+ * Cuántas recomendaciones ve el usuario como mucho. Con 19 electrodomésticos
+ * posibles, sin tope el plan se vuelve un listado: es mejor que ataque los
+ * pocos que de verdad mueven el consumo.
+ */
+export const MAX_RECOMMENDATIONS = 4;
+
+function capRecommendations(content: SavingsPlanContent): SavingsPlanContent {
+  if (content.recommendations.length <= MAX_RECOMMENDATIONS) {
+    return content;
+  }
+
+  return {
+    ...content,
+    recommendations: content.recommendations.slice(0, MAX_RECOMMENDATIONS),
+  };
 }
 
 /**
@@ -271,7 +307,11 @@ export async function generateSavingsPlan(
   const request = await buildPlanGenerationRequest(receipt, appliances);
   const content = await generatePlanContent(request);
 
-  const finalContent = content ?? FALLBACK_PLAN;
+  // El tope lo pide el prompt, pero se aplica igual acá: si el modelo se
+  // entusiasma y manda seis, el usuario recibiría una lista que no se lee.
+  // Vienen ordenadas de mayor a menor ahorro, así que cortar por el final
+  // deja las que más pesan.
+  const finalContent = capRecommendations(content ?? FALLBACK_PLAN);
 
   const plan = await planRepository.upsertForUser({
     userId,
