@@ -75,7 +75,7 @@ const pages = [
     layout: [
       multipleSelect({
         name: "climatizacion",
-        label: "¿Cuáles de estos tienes?",
+        label: "¿Cuáles de los siguientes usas con más frecuencia?",
         options: [
           ["aire", "Aire acondicionado"],
           ["ventilador", "Ventilador"],
@@ -91,9 +91,9 @@ const pages = [
     layout: [
       multipleSelect({
         name: "cocina",
-        label: "¿Cuáles de estos tienes?",
+        label: "¿Cuáles de los siguientes usas con más frecuencia?",
         options: [
-          ["horno", "Horno / air fryer"],
+          ["horno", "Horno eléctrico / air fryer"],
           ["microondas", "Horno microondas"],
           ["arrocera", "Arrocera"],
           ["licuadora", "Licuadora"],
@@ -110,7 +110,7 @@ const pages = [
     layout: [
       multipleSelect({
         name: "lavado",
-        label: "¿Cuáles de estos tienes?",
+        label: "¿Cuáles de los siguientes usas con más frecuencia?",
         options: [
           ["lavadora", "Lavadora de ropa"],
           ["secadora_gas", "Secadora a gas"],
@@ -127,7 +127,7 @@ const pages = [
     layout: [
       multipleSelect({
         name: "cuidado_personal",
-        label: "¿Cuáles de estos tienes?",
+        label: "¿Cuáles de los siguientes usas con más frecuencia?",
         options: [
           ["secador_pelo", "Secador de pelo"],
           ["plancha_pelo", "Plancha de pelo"],
@@ -142,12 +142,12 @@ const pages = [
     layout: [
       multipleSelect({
         name: "otros",
-        label: "¿Cuáles de estos tienes?",
+        label: "¿Cuáles de los siguientes usas con más frecuencia?",
         options: [
           ["tv", "Televisor"],
           ["consola", "Consola de juegos"],
-          ["sonido", "Equipo de sonido"],
-          ["calentador_agua", "Calentador de agua"],
+          ["sonido", "Equipo de sonido de alta potencia"],
+          ["calentador_agua", "Calentador eléctrico de agua"],
         ],
       }),
     ],
