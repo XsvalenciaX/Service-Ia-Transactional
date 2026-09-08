@@ -4,6 +4,7 @@ dist
 *.log
 
 apps/bot/uploads
+apps/bot/energy-bot_sessions
 
 # Prisma
 packages/database/generated

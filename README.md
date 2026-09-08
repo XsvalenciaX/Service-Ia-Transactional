@@ -3,8 +3,9 @@
 Bot conversacional de WhatsApp que ayuda a un usuario a armar un plan de ahorro
 energético del 15%. Monorepo con **pnpm workspaces**, separado en capas:
 
-- `apps/bot` — presentación: flujos de **BuilderBot** + provider **Baileys** (QR). No
-  contiene lógica de negocio ni accede a la base de datos directamente.
+- `apps/bot` — presentación: flujos de **BuilderBot** + provider **Twilio**
+  (WhatsApp vía webhook). No contiene lógica de negocio ni accede a la base de
+  datos directamente.
 - `packages/services` — lógica de negocio pura (recibo, electrodomésticos, plan,
   estado de la conversación). No conoce BuilderBot ni WhatsApp.
 - `packages/database` — schema de **Prisma** (Postgres), cliente y repositorios.
@@ -46,8 +47,10 @@ degradan en vez de cortar la conversación.
    cp .env.example .env
    ```
 
-   Edita `DATABASE_URL` con los datos de tu Postgres local. `AI_PROVIDER_API_KEY`
-   se deja vacío por ahora (se usará cuando se conecte la IA).
+   Edita `DATABASE_URL` con los datos de tu Postgres local, `AI_PROVIDER_API_KEY_OPENAI`
+   (ver [Configurar la IA](#configurar-la-ia)) y las variables de Twilio
+   (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER`, `PUBLIC_URL`) —
+   ver [Configurar Twilio](#configurar-twilio) más abajo.
 
 3. Generar el cliente de Prisma y correr las migraciones:
 
@@ -62,12 +65,11 @@ degradan en vez de cortar la conversación.
    pnpm dev
    ```
 
-   Va a aparecer un **QR en la consola**: escanéalo desde WhatsApp (Dispositivos
-   vinculados → Vincular un dispositivo). Si por lo que sea no se ve bien en la
-   terminal, Baileys también deja una imagen `apps/bot/<BOT_SESSION_NAME>.qr.png`
-   que puedes abrir directamente. La sesión queda guardada en
-   `apps/bot/<BOT_SESSION_NAME>_sessions/` para no tener que volver a escanear en
-   cada reinicio.
+   El bot levanta un servidor HTTP en `PORT` (por defecto 3000) que expone
+   `POST /webhook`, donde Twilio manda los mensajes entrantes. Para probarlo con
+   WhatsApp real hace falta que esa URL sea pública — en local usa un túnel (ver
+   [Configurar Twilio](#configurar-twilio) más abajo) o, si solo quieres iterar
+   sobre los flujos sin depender de Twilio, usa el [simulador](#probar-sin-whatsapp-simulador).
 
 5. (Opcional) Ver los datos guardados con Prisma Studio:
 
@@ -85,15 +87,15 @@ monorepo y corre las migraciones al arrancar):
 pnpm docker:up
 ```
 
-Esto expone Postgres en `localhost:5432` y corre el bot dentro de un contenedor. El
-**QR sale por los logs** del contenedor `bot` (`docker compose logs -f bot` si lo
-corriste en segundo plano). La sesión de Baileys y las imágenes de recibos quedan en
-volúmenes con nombre (`bot_sessions`, `bot_uploads`), así que no hay que volver a
-escanear el QR en cada `docker compose up`.
+Esto expone Postgres en `localhost:5432` y corre el bot dentro de un contenedor,
+escuchando el webhook de Twilio en el puerto 3000 (`docker compose logs -f bot` si lo
+corriste en segundo plano). Las variables de Twilio se pasan por entorno (ver
+`docker-compose.yml`) y las imágenes de recibos quedan en un volumen con nombre
+(`bot_uploads`).
 
 Para bajar todo: `pnpm docker:down` (agrega `-v` manualmente con `docker compose down
--v` si además quieres borrar los volúmenes, es decir la sesión de WhatsApp y los datos
-de Postgres).
+-v` si además quieres borrar los volúmenes, es decir las imágenes de recibos y los
+datos de Postgres).
 
 Si prefieres usar Docker **solo para Postgres** y seguir corriendo el bot con `pnpm
 dev` en tu máquina, comenta o borra el servicio `bot` de `docker-compose.yml` y deja
@@ -145,10 +147,35 @@ sentido si la extracción falla con recibos reales.
 variable vacía. Si la key se filtra, revocala desde la misma pantalla de
 **API keys** de la consola.
 
+## Configurar Twilio
+
+El bot usa **Twilio** como provider de WhatsApp (vía `@builderbot/provider-twilio`),
+que recibe los mensajes por webhook en vez de una sesión local tipo QR:
+
+1. Creá una cuenta en <https://www.twilio.com/console> y activá el **WhatsApp
+   Sandbox** (Messaging → Try it out → Send a WhatsApp message) para pruebas, o un
+   número de WhatsApp productivo si ya tenés uno aprobado.
+2. Copiá el **Account SID** y el **Auth Token** de la consola y pegalos en el
+   `.env` de la raíz (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`), junto con el
+   número de WhatsApp del sandbox/productivo en formato E.164
+   (`TWILIO_WHATSAPP_NUMBER=+14155238886`).
+3. El bot necesita una URL pública para que Twilio le pegue al webhook. En local,
+   corré:
+
+   ```bash
+   pnpm dev:tunnel
+   ```
+
+   Esto levanta `pnpm dev` y un túnel de `ngrok` apuntando al puerto `PORT`, e
+   imprime la URL pública y la del webhook (`<url>/webhook`). Poné esa URL base en
+   `PUBLIC_URL` del `.env` y configurá `<url>/webhook` como el webhook de mensajes
+   entrantes en la consola de Twilio (Sandbox settings, o el número productivo).
+4. Reiniciá el bot (`pnpm dev`) después de cambiar el `.env` para que tome las
+   variables nuevas.
+
 ## Probar sin WhatsApp (simulador)
 
-Vincular el bot a un número real es incómodo para desarrollar: la sesión de Baileys
-queda atada a un solo WhatsApp y hace falta un segundo teléfono que le escriba. Para
+Configurar Twilio y un túnel público es incómodo para desarrollar rápido. Para
 iterar sobre los flujos hay un simulador con una interfaz de chat en el navegador, que
 corre los mismos flows de BuilderBot contra un provider mock (`TestTool.TestProvider`),
 sin WhatsApp de por medio:
@@ -227,7 +254,8 @@ con el clip 📎.
 | Script             | Descripción                                             |
 | ------------------ | -------------------------------------------------------- |
 | `pnpm install`      | Instala todo el workspace                                |
-| `pnpm dev`          | Levanta el bot en modo desarrollo (muestra el QR)         |
+| `pnpm dev`          | Levanta el bot en modo desarrollo (webhook de Twilio)      |
+| `pnpm dev:tunnel`   | `pnpm dev` + túnel de ngrok para exponer el webhook        |
 | `pnpm sim`          | Simulador web: prueba los flujos en el navegador          |
 | `pnpm build`        | Compila `database`, `services` y `bot` en orden          |
 | `pnpm db:generate`  | Genera el cliente de Prisma                              |
