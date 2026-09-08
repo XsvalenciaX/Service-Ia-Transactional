@@ -49,6 +49,9 @@ Reglas:
   otros países ("boludo", "che", "güey"): pudo haberse equivocado de foto sin
   querer, así que trátalo siempre con respeto.
 - No inventes valores: si un dato no se ve en la imagen, omítelo en vez de estimarlo.
+- Omitir significa NO incluir la clave en el JSON. Nunca la pongas en 0, ni en null,
+  ni en un guion: un 0 se lee como "el consumo fue cero", no como "no lo encontré",
+  y arruina el plan. Ante la duda, deja el campo afuera.
 - Los consumos van como número, sin separadores de miles ni unidades.
 - No extraigas montos, precios ni tarifas: no los pedimos y no se usan para nada.
 - "averageConsumptionKwh" es el promedio que la factura ya trae impreso. Casi
@@ -91,11 +94,35 @@ function buildReceiptAnalysisRequest(
  * pesada) devolvemos valid=false con una explicación: el flow ya sabe pedir
  * la foto de nuevo, y es mejor que cortar la conversación con un error.
  */
+/**
+ * El prompt le pide omitir el dato que no ve, pero a veces lo rellena con un
+ * 0 en vez de dejarlo afuera. Un 0 no es "no lo encontré": pasa cualquier
+ * chequeo de `=== undefined`, se guarda, y termina en un plan armado sobre un
+ * promedio de 0 kWh y una meta de 0. Acá se normaliza a undefined todo lo que
+ * no pueda ser un consumo mensual real, para que el flow lo trate como lo que
+ * es: un dato que falta y hay que volver a pedir.
+ */
+function sanitizeAnalysis(analysis: ReceiptAnalysisResult): ReceiptAnalysisResult {
+  const limpio = { ...analysis };
+
+  for (const campo of ["consumptionKwh", "averageConsumptionKwh"] as const) {
+    const valor = limpio[campo];
+    if (valor !== undefined && !isPlausibleConsumption(valor)) {
+      console.warn(
+        `[receipt] el modelo devolvió ${campo}=${valor}, fuera del rango plausible: se descarta.`
+      );
+      limpio[campo] = undefined;
+    }
+  }
+
+  return limpio;
+}
+
 async function analyzeReceiptWithModel(
   request: ReceiptAnalysisRequest
 ): Promise<ReceiptAnalysisResult> {
   try {
-    return await requestJson<ReceiptAnalysisResult>({
+    return sanitizeAnalysis(await requestJson<ReceiptAnalysisResult>({
       system: ANALYSIS_SYSTEM,
       prompt: request.instructions,
       image: request.image,
@@ -108,7 +135,7 @@ async function analyzeReceiptWithModel(
         periodStart: "2026-08-01",
         periodEnd: "2026-08-31",
       }),
-    });
+    }));
   } catch (error) {
     if (error instanceof AiError) {
       console.error("[receipt] falló la lectura del recibo:", error.message);

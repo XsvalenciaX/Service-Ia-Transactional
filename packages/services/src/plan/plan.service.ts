@@ -14,6 +14,7 @@ import {
 } from "../shared/image.js";
 import { AiError, requestJson } from "../shared/ai.js";
 import { getApplianceQuestionText } from "../appliances/appliance-questions.js";
+import { isPlausibleConsumption } from "../receipt/receipt.service.js";
 
 /**
  * Lo que se le pide a la IA que ataque. El plan se diseña para 15% aunque al
@@ -88,9 +89,28 @@ que dio sobre cómo usa sus electrodomésticos. Reglas:
   cuenta la haces para elegir las recomendaciones, no para escribirla. Si no tienes
   el promedio, trabaja con el consumo del período y no lo menciones.
 - Si el usuario dijo que no tiene un electrodoméstico, no lo recomiendes.
-- MÁXIMO 4 recomendaciones, y menos si con menos alcanza: cada una accionable y en
-  una o dos frases. Tres sobre lo que de verdad mueve la aguja sirven más que cinco
-  diluidas, y en WhatsApp una lista larga no se lee.
+- UNA recomendación por electrodoméstico, y MÁXIMO 4 en total: las de los 4 de mayor
+  impacto, ordenadas de mayor a menor ahorro. Si el usuario declaró menos de 4,
+  entrega sólo esa cantidad — con un electrodoméstico, una o dos recomendaciones
+  están bien. Nunca rellenes para llegar a 4 ni repitas el mismo consejo partido en
+  dos: una lista corta y contundente sirve más que una larga y diluida, y en WhatsApp
+  no se lee.
+- CADA recomendación se escribe con esta forma exacta, que es la que mejor funciona:
+  "<Electrodoméstico>: <cómo lo usa hoy, con el dato que declaró>. <Acción concreta>;
+  <el cambio puntual> puede ahorrar aproximadamente <N> kWh al mes."
+  Ejemplos:
+  "Ventilador: actualmente permanece encendido 24 horas al día. Apágalo cuando no
+  estés en el espacio y usa temporizador para evitar que funcione toda la noche;
+  reducir 8 horas diarias puede ahorrar aproximadamente 11 kWh al mes."
+  "Lavadora: la usas una vez por semana. Mantén las cargas completas y evita ciclos
+  adicionales o de agua caliente; esta medida puede ahorrar aproximadamente 0,5 kWh
+  al mes."
+  Es decir: empieza con el nombre del electrodoméstico y dos puntos; recuérdale el uso
+  que él mismo declaró; dile qué hacer; y cierra con el ahorro de ESA recomendación en
+  kWh al mes, siempre con "aproximadamente" porque es una estimación tuya a partir de
+  la potencia típica y del uso declarado.
+- Ese ahorro por recomendación sí va escrito. Lo que nunca va es la suma de todos ni
+  la meta del plan: cada línea habla sólo de su propio electrodoméstico.
 - Escribe en español colombiano neutro, tratando al usuario de "tú", sin tecnicismos
   ni markdown. Nada de insultos ni de modismos de otros países.
 - Responde únicamente con el JSON pedido.`;
@@ -128,9 +148,16 @@ function readExtractedData(
   return data as Record<string, unknown>;
 }
 
+/**
+ * Se valida el rango, no sólo el tipo: hay recibos guardados con
+ * `averageConsumptionKwh: 0` de cuando el modelo rellenaba con cero en vez de
+ * omitir el campo. Sin este filtro, la meta salía como "0 kWh o menos".
+ */
 function readAverageConsumptionKwh(receipt: Receipt | null): number | undefined {
   const valor = readExtractedData(receipt)?.averageConsumptionKwh;
-  return typeof valor === "number" && Number.isFinite(valor) ? valor : undefined;
+  return typeof valor === "number" && isPlausibleConsumption(valor)
+    ? valor
+    : undefined;
 }
 
 /**
