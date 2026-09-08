@@ -32,7 +32,7 @@ const PENDING_APPLIANCE_KEYS = "pendingApplianceKeys";
 // Appliance.
 const PENDING_HOURS_KEY = "pendingApplianceHours";
 
-const APPLIANCE_SELECTION_CONTENT_SID = "HXf2c39fd1d39ecc89cadf8ee39391f61f";
+const APPLIANCE_SELECTION_CONTENT_SID = "HXc523c1fed19933718c26fc3e6bd606e1";
 
 const questionsByKey = new Map(APPLIANCE_QUESTIONS.map((q) => [q.key, q]));
 

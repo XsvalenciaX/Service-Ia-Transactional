@@ -155,7 +155,7 @@ const pages = [
 ];
 
 export const APPLIANCE_SELECTION_FLOW_PAYLOAD = {
-  friendly_name: "appliance_selection_v2",
+  friendly_name: "appliance_selection_v3",
   language: "es",
   types: {
     "twilio/flows": {
