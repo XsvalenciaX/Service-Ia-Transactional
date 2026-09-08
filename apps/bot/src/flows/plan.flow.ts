@@ -39,6 +39,17 @@ export const planFlow = addKeyword(["_planFlow_"]).addAction(
       );
     }
 
-    await conversationStateService.markPlanReady(user.id);
+    const state = await conversationStateService.markPlanReady(user.id);
+
+    const availableAt = conversationStateService.nextPlanAvailableAt(state);
+    const availableAtLabel = availableAt
+      ? new Intl.DateTimeFormat("es", { day: "numeric", month: "long", year: "numeric" }).format(
+          availableAt
+        )
+      : null;
+
+    if (availableAtLabel) {
+      await flowDynamic(`📅 Podrás generar un plan nuevo a partir del *${availableAtLabel}*.`);
+    }
   }
 );
