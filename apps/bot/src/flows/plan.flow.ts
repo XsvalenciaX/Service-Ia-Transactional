@@ -17,27 +17,25 @@ export const planFlow = addKeyword(["_planFlow_"]).addAction(
     // Al usuario se le promete el 10%, aunque el plan que armó la IA esté
     // diseñado para 15% (ver PLAN_REDUCTION_PERCENT): esa diferencia es el
     // colchón para que la meta se cumpla aunque lo siga a medias.
-    await flowDynamic(
-      `✅ Listo, este es tu plan para bajar un *${planService.PROMISED_REDUCTION_PERCENT}%* tu consumo:\n\n${content.summary}`
-    );
+    //
+    // Un solo mensaje con los datos del plan (resumen + meta en kWh + aviso
+    // de no-personalizado si aplica) en vez de tres — cada mensaje libre
+    // adicional se paga por tarifa de mensajería, sin importar qué tan corto sea.
+    const targetLine =
+      targetKwh !== undefined
+        ? `\n\n🎯 Buscando que sea *${targetKwh} kWh* o menos en la próxima factura.`
+        : "";
+    const personalizedLine = !personalized
+      ? "\n\n⚠️ Ojo: no pude personalizarlo con tus datos en este momento, así que te di las recomendaciones generales."
+      : "";
 
-    if (targetKwh !== undefined) {
-      await flowDynamic(
-        `🎯 Buscando que sea *${targetKwh} kWh* o menos en la próxima factura.`
-      );
-    }
+    await flowDynamic(
+      `✅ Listo, este es tu plan para bajar un *${planService.PROMISED_REDUCTION_PERCENT}%* tu consumo:\n\n${content.summary}${targetLine}${personalizedLine}`
+    );
 
     const recomendaciones = content.recommendations
       .map((texto, i) => `${i + 1}. ${texto}`)
       .join("\n\n");
-
-    await flowDynamic(`📋 *Qué hacer:*\n\n${recomendaciones}`);
-
-    if (!personalized) {
-      await flowDynamic(
-        "⚠️ Ojo: no pude personalizarlo con tus datos en este momento, así que te di las recomendaciones generales."
-      );
-    }
 
     const state = await conversationStateService.markPlanReady(user.id);
 
@@ -48,8 +46,12 @@ export const planFlow = addKeyword(["_planFlow_"]).addAction(
         )
       : null;
 
-    if (availableAtLabel) {
-      await flowDynamic(`📅 Podrás generar un plan nuevo a partir del *${availableAtLabel}*.`);
-    }
+    // La fecha del próximo plan cierra el mensaje de "qué hacer" en vez de
+    // ir aparte: mismo motivo que arriba, un mensaje libre menos por usuario.
+    const nextPlanLine = availableAtLabel
+      ? `\n\n📅 Podrás generar un plan nuevo a partir del *${availableAtLabel}*.`
+      : "";
+
+    await flowDynamic(`📋 *Qué hacer:*\n\n${recomendaciones}${nextPlanLine}`);
   }
 );

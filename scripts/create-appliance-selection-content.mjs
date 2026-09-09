@@ -75,11 +75,12 @@ const pages = [
     layout: [
       multipleSelect({
         name: "climatizacion",
-        label: "¿Cuáles de los siguientes usas con más frecuencia?",
+        label: "¿Cuáles de estos tienes y usas frecuentemente?",
         options: [
           ["aire", "Aire acondicionado"],
           ["ventilador", "Ventilador"],
           ["calefactor", "Calefactor"],
+          ["calentador_agua", "Calentador eléctrico de agua"],
         ],
       }),
     ],
@@ -91,7 +92,7 @@ const pages = [
     layout: [
       multipleSelect({
         name: "cocina",
-        label: "¿Cuáles de los siguientes usas con más frecuencia?",
+        label: "¿Cuáles de estos tienes y usas frecuentemente?",
         options: [
           ["horno", "Horno eléctrico / air fryer"],
           ["microondas", "Horno microondas"],
@@ -110,7 +111,7 @@ const pages = [
     layout: [
       multipleSelect({
         name: "lavado",
-        label: "¿Cuáles de los siguientes usas con más frecuencia?",
+        label: "¿Cuáles de estos tienes y usas frecuentemente?",
         options: [
           ["lavadora", "Lavadora de ropa"],
           ["secadora_gas", "Secadora a gas"],
@@ -127,10 +128,9 @@ const pages = [
     layout: [
       multipleSelect({
         name: "cuidado_personal",
-        label: "¿Cuáles de los siguientes usas con más frecuencia?",
+        label: "¿Cuáles de estos tienes y usas frecuentemente?",
         options: [
           ["secador_pelo", "Secador de pelo"],
-          ["plancha_pelo", "Plancha de pelo"],
         ],
       }),
     ],
@@ -142,12 +142,11 @@ const pages = [
     layout: [
       multipleSelect({
         name: "otros",
-        label: "¿Cuáles de los siguientes usas con más frecuencia?",
+        label: "¿Cuáles de estos tienes y usas frecuentemente?",
         options: [
           ["tv", "Televisor"],
           ["consola", "Consola de juegos"],
           ["sonido", "Equipo de sonido de alta potencia"],
-          ["calentador_agua", "Calentador eléctrico de agua"],
         ],
       }),
     ],
@@ -155,13 +154,16 @@ const pages = [
 ];
 
 export const APPLIANCE_SELECTION_FLOW_PAYLOAD = {
-  friendly_name: "appliance_selection_v3",
-  language: "es",
+  friendly_name: "appliance_selection_v5",
+  language: "es_MX",
   types: {
     "twilio/flows": {
       body: "Antes de armar tu plan de ahorro, cuéntanos qué electrodomésticos tienes en casa. Selecciona todos los que correspondan.",
       button_text: "Elegir",
-      subtitle: "Puedes seleccionar todos los que correspondan.",
+      // Sin emoji: WhatsApp rechaza la aprobación de un twilio/flows si el
+      // subtitle lleva emoji o saltos de línea (error 400 confirmado al
+      // mandar ApprovalRequests con "🔒" en v4).
+      subtitle: "Uso esto solo para calcular tu plan de ahorro.",
       type: "OTHER",
       pages,
     },

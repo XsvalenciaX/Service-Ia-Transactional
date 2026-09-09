@@ -64,7 +64,7 @@ const main = async () => {
         res.write(data);
         vivos.push(res);
       } catch {
-        // Cliente caído: lo sacamos de la lista.
+        // no-op: se cae de `vivos`, que reemplaza la lista al final.
       }
     }
 

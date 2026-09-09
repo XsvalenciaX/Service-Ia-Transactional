@@ -2,13 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 
-// El .env vive en la raíz del monorepo. Esto tiene que correr ANTES de
-// importar cualquier módulo que lea variables de entorno en su propio
-// top-level (p.ej. @energy-bot/database arma el pool de Postgres al
-// importarse) — por eso los demás imports son dinámicos y van dentro de
-// main(), después de cargar el .env. Un `import` estático de esos módulos
-// acá arriba se ejecutaría antes de este dotenv.config(), dejándolos sin
-// las variables de entorno.
+// El .env vive en la raíz del monorepo y tiene que cargar ANTES de importar
+// módulos que leen variables de entorno en su propio top-level (p.ej.
+// @energy-bot/database arma el pool de Postgres al importarse) -- por eso
+// esos imports son dinámicos, dentro de main(), en vez de estáticos acá arriba.
 dotenv.config({ path: path.resolve(import.meta.dirname, "../../../.env") });
 
 const main = async () => {
@@ -31,16 +28,13 @@ const main = async () => {
   provider.on(
     "message",
     (ctx: { from?: string; name?: string; body?: string; InteractiveData?: string }) => {
-      // BuilderBot descarta en silencio cualquier mensaje entrante con
-      // `body` vacío (@builderbot/bot, handleMsg: `if (!body) return;`) --
-      // nunca llega a ningún flow, sin loguear nada. Una respuesta de un
-      // twilio/flows (ver appliances.flow.ts, appliance_selection) no trae
-      // Body, sólo InteractiveData, así que sin este parche esa respuesta
-      // se pierde siempre. Este listener se registra antes que el interno
-      // de BuilderBot (createBot() más abajo) y ambos reciben el mismo
-      // objeto, así que mutarlo acá alcanza. El marcador usa el mismo
-      // prefijo "_event_" que ya trata isTextMessage() como "no es texto"
-      // (utils/message-validation.ts).
+      // BuilderBot descarta en silencio los mensajes con `body` vacío
+      // (handleMsg: `if (!body) return;`), y una respuesta de twilio/flows
+      // (appliance_selection) sólo trae InteractiveData -- se perdería
+      // siempre sin este parche. Este listener corre antes que el interno
+      // de BuilderBot y ambos comparten el mismo ctx, así que mutarlo acá
+      // alcanza. Prefijo "_event_": mismo que isTextMessage() ya trata como
+      // "no es texto" (utils/message-validation.ts).
       if (!ctx.body && ctx.InteractiveData) {
         ctx.body = "_event_interactive_flow_";
       }

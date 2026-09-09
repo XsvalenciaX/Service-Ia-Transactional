@@ -3,25 +3,10 @@ import { conversationStateService, ConversationStep } from "@energy-bot/services
 import type { FlowContext, FlowMethods } from "../types/flow.js";
 
 /**
- * EVENTS.WELCOME es el catch-all de BuilderBot: le llega todo el texto que no
- * matchea ninguna keyword ni un `capture` pendiente. Sirve para varias cosas
- * distintas según en qué paso esté el usuario:
- *
- * - En WELCOME, el primer mensaje: lo saludamos y le pedimos el recibo.
- * - Bloqueado (LOCKED): no le contestamos nada hasta que pase el bloqueo.
- * - Recién desbloqueado: se lo avisamos y le repetimos el pedido de la foto.
- * - Recién habilitado para un plan nuevo (pasaron los días mínimos desde el
- *   último): se lo avisamos y le pedimos la foto del recibo actualizado.
- * - Esperando la foto (AWAITING_RECEIPT): si escribe texto en vez de mandar
- *   la foto, se lo recordamos.
- * - Plan listo (COMPLETED): mensaje fijo. El bot es 100% guiado, no hay IA
- *   respondiendo texto libre — los comandos para ver el plan, borrar el
- *   progreso, etc. van a vivir en una plantilla aparte.
- * - Cualquier otro paso (ASKING_*): son pasos que sólo se contestan por
- *   `gotoFlow` + `capture`, nunca por keyword, así que llegar acá significa
- *   que el flujo se cortó a mitad de camino y no hay forma de retomarlo. Se
- *   trata como estado huérfano: se borran los datos de ese intento y se
- *   arranca de cero (ver el bloque final de este action).
+ * EVENTS.WELCOME es el catch-all de BuilderBot: le llega todo el texto que
+ * no matchea ninguna keyword ni un `capture` pendiente. Qué responde
+ * depende del paso en el que esté el usuario (`state.currentStep`, casos
+ * abajo); el bot es 100% guiado, no hay IA respondiendo texto libre.
  */
 export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
   async (ctx: FlowContext, { flowDynamic, endFlow, gotoFlow }: FlowMethods) => {
