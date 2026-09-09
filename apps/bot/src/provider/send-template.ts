@@ -1,11 +1,6 @@
 import type { TemplatePrompt } from "@energy-bot/services";
 import type { FlowMethods } from "../types/flow.js";
-
-// Mismo formato que usa @builderbot/provider-twilio internamente
-// (parseNumberFrom en su bundle): "whatsapp:+<solo dígitos>".
-function toWhatsappNumber(raw: string): string {
-  return `whatsapp:+${raw.replace(/whatsapp|:|\+/g, "").replace(/\s/g, "")}`;
-}
+import { toWhatsappAddress } from "./twilio-address.js";
 
 /**
  * Manda una plantilla de contenido de Twilio (botones o lista) usando el
@@ -30,8 +25,8 @@ export async function sendTemplate(
     return twilioClient.messages.create({
       contentSid: prompt.contentSid,
       contentVariables: prompt.variables ? JSON.stringify(prompt.variables) : undefined,
-      from: toWhatsappNumber(vendorNumber),
-      to: toWhatsappNumber(to),
+      from: toWhatsappAddress(vendorNumber),
+      to: toWhatsappAddress(to),
     });
   }
 
