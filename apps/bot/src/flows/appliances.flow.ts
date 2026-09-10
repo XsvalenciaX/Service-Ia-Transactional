@@ -32,11 +32,6 @@ const PENDING_APPLIANCE_KEYS = "pendingApplianceKeys";
 // Appliance.
 const PENDING_HOURS_KEY = "pendingApplianceHours";
 
-// appliance_selection_v5: agrega el subtitle de privacidad, mueve el
-// calentador de agua a Climatización y pregunta "¿tienes y usas
-// frecuentemente?" en vez de "usas con más frecuencia?". Pendiente de
-// aprobación de WhatsApp al momento de este cambio -- no funciona hasta
-// que la aprueben (ver create-appliance-selection-content.mjs).
 const APPLIANCE_SELECTION_CONTENT_SID = "HXa3d7406a81b55d578b83c0884e5c3af9";
 
 const questionsByKey = new Map(APPLIANCE_QUESTIONS.map((q) => [q.key, q]));
@@ -401,12 +396,6 @@ const applianceSelectionFlow = addKeyword(["_ask_appliance_selection_"])
     }
   );
 
-// Sin mensaje de texto propio: el aviso de privacidad ("uso esto solo para
-// calcular tu plan") ahora es el subtitle de appliance_selection_v5 (ver
-// create-appliance-selection-content.mjs) en vez de un mensaje libre
-// aparte. APPLIANCE_SELECTION_CONTENT_SID ya apunta a ese content, pero
-// está pendiente de aprobación de WhatsApp -- no desplegar hasta que la
-// consola confirme "approved", o el envío falla en vez de mostrar el aviso.
 export const applianceIntroFlow = addKeyword(["_applianceQuestionsFlow_"]).addAction(
   async (_ctx: FlowContext, { gotoFlow }: FlowMethods) => {
     return gotoFlow(applianceSelectionFlow);

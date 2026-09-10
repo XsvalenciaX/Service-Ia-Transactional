@@ -160,9 +160,6 @@ export const APPLIANCE_SELECTION_FLOW_PAYLOAD = {
     "twilio/flows": {
       body: "Antes de armar tu plan de ahorro, cuéntanos qué electrodomésticos tienes en casa. Selecciona todos los que correspondan.",
       button_text: "Elegir",
-      // Sin emoji: WhatsApp rechaza la aprobación de un twilio/flows si el
-      // subtitle lleva emoji o saltos de línea (error 400 confirmado al
-      // mandar ApprovalRequests con "🔒" en v4).
       subtitle: "Uso esto solo para calcular tu plan de ahorro.",
       type: "OTHER",
       pages,
