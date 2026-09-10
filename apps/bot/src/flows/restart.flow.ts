@@ -20,13 +20,12 @@ export function isRestartCommand(text: string): boolean {
 }
 
 /**
- * "reiniciar" es un atajo para desarrollo/pruebas: en producción no debería
- * poder saltarse el bloqueo diario ni el mínimo de días entre planes, así
- * que ahí no hace nada (ver conversationStateService.MIN_DAYS_BETWEEN_PLANS
- * y lockUntilTomorrow).
+ * Habilitado en todos los entornos mientras seguimos en pruebas. Cuando
+ * pasemos a producción hay que volver a restringirlo (ver
+ * conversationStateService.MIN_DAYS_BETWEEN_PLANS y lockUntilTomorrow).
  */
 function isRestartAllowed(): boolean {
-  return process.env.NODE_ENV !== "production";
+  return true;
 }
 
 export const restartFlow = addKeyword(RESTART_KEYWORDS).addAction(
