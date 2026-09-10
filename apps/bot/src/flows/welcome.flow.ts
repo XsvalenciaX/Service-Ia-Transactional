@@ -35,11 +35,7 @@ export const welcomeFlow = addKeyword(EVENTS.WELCOME).addAction(
     if (state.currentStep === ConversationStep.WELCOME) {
 
       await flowDynamic(
-          "¡Hola! 👋 Soy Wattson, tu asistente de ahorro energético para el hogar. Te ayudaré a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más."
-        );
-
-      await flowDynamic(
-          "Para empezar, envíame una *foto de tu recibo o factura de energía* más reciente.\nToma la foto donde se muestre el consumo promedio en kWh. 📸"
+          "¡Hola! 👋 Soy Wattson, tu asistente de ahorro energético para el hogar. Te ayudaré a crear un plan personalizado para reducir tu consumo eléctrico en un 10% o más.\n\nPara empezar, envíame una *foto de tu recibo o factura de energía* más reciente.\nToma la foto donde se muestre el consumo promedio en kWh. 📸"
         );
 
       await conversationStateService.advanceStep(
